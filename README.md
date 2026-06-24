@@ -53,6 +53,12 @@ ARK_MODEL_ID=doubao-seedance-2-0-260128
 - `SEEDANCE_MOCK=true`：参考视频只保存为输入参考；输出视频仍由上传图片生成 mock 视频。
 - `SEEDANCE_MOCK=false`：调用 Seedance 生成视频；参考视频会随任务保存，后续可扩展为正式的视频参考参数。
 
+## 图片格式
+
+前端可以上传常见图片格式。后端会统一转成真正的 `source.png` 再保存和传给后续流程。
+
+建议优先使用：PNG、JPG/JPEG、WebP。后端也会尝试支持 AVIF、TIFF、GIF 等 Sharp 可解码的栅格格式。
+
 ## 两阶段处理
 
 任务分为两阶段：

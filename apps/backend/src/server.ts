@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import cors from "cors";
 import express from "express";
 import multer from "multer";
+import sharp from "sharp";
 import { z } from "zod";
 import { defaultPrompt, taskStatuses, type FrameExtractMode, type RotationMode, type Task } from "@prop-tool/shared";
 import { assertInside, createQueueClient, ensureTaskDirs, getConfig, getTaskPaths, TaskStore } from "@prop-tool/core";
@@ -20,6 +21,17 @@ const queue = createQueueClient(config.redisUrl);
 function isVideoUpload(file: Express.Multer.File): boolean {
   const ext = path.extname(file.originalname).toLowerCase();
   return file.mimetype.startsWith("video/") || [".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv"].includes(ext);
+}
+
+async function normalizeImageUpload(file: Express.Multer.File): Promise<Buffer> {
+  try {
+    return await sharp(file.buffer, { animated: false })
+      .rotate()
+      .png()
+      .toBuffer();
+  } catch {
+    throw new Error("Uploaded image could not be decoded. Supported raster formats include PNG, JPEG, WebP, AVIF, TIFF, and GIF.");
+  }
 }
 
 const taskSchema = z.object({
@@ -81,9 +93,10 @@ app.post(
     const params = taskSchema.parse(req.body);
     const taskId = randomUUID();
     const taskName = params.taskName || `任务-${taskId.slice(0, 8)}`;
+    const sourcePng = await normalizeImageUpload(imageFile);
     const paths = getTaskPaths(config.storageRoot, taskId);
     await ensureTaskDirs(paths);
-    await fs.writeFile(paths.sourceImage, imageFile.buffer);
+    await fs.writeFile(paths.sourceImage, sourcePng);
     if (referenceVideoFile) {
       await fs.writeFile(paths.referenceVideo, referenceVideoFile.buffer);
     }
@@ -121,7 +134,7 @@ app.post(
       outputType: "source",
       filePath: paths.sourceImage,
       fileName: "source.png",
-      fileSize: imageFile.size,
+      fileSize: sourcePng.length,
       sortOrder: 0
     });
     if (referenceVideoFile) {
