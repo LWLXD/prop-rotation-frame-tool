@@ -55,7 +55,6 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [referenceVideo, setReferenceVideo] = useState<File | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -127,10 +126,6 @@ export function App() {
     setLocalPreview(nextFile ? URL.createObjectURL(nextFile) : null);
   }
 
-  function handleReferenceVideoChange(event: React.ChangeEvent<HTMLInputElement>) {
-    setReferenceVideo(event.target.files?.[0] ?? null);
-  }
-
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file) {
@@ -142,15 +137,11 @@ export function App() {
     try {
       const data = new FormData();
       data.append("image", file);
-      if (referenceVideo) {
-        data.append("referenceVideo", referenceVideo);
-      }
       for (const [key, value] of Object.entries(form)) {
         data.append(key, String(value));
       }
       const created = await createTask(data);
       setForm((current) => ({ ...current, taskName: "" }));
-      setReferenceVideo(null);
       await refresh(created.taskId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -186,7 +177,6 @@ export function App() {
           {runtimeConfig.seedanceMock
             ? "当前为本地模拟模式：不会调用 Seedance，生成的视频是静态占位视频。"
             : `当前为 Seedance API 模式：${runtimeConfig.arkModelId}`}
-          {!runtimeConfig.seedanceMock && !runtimeConfig.hasPublicBaseUrl && " 缺少 PUBLIC_BASE_URL，火山方舟无法拉取上传图片。"}
           {!runtimeConfig.seedanceMock && !runtimeConfig.hasArkApiKey && " 缺少 ARK_API_KEY。"}
         </div>
       )}
@@ -212,12 +202,6 @@ export function App() {
           <label className="dropzone">
             {localPreview ? <img src={localPreview} alt="" /> : <Upload size={32} />}
             <input accept="image/*" type="file" onChange={handleFileChange} />
-          </label>
-
-          <label className="fileField">
-            <span>参考视频（可选）</span>
-            <input accept="video/*" type="file" onChange={handleReferenceVideoChange} />
-            {referenceVideo && <small>{referenceVideo.name}</small>}
           </label>
 
           <label>

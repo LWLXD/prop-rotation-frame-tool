@@ -4,8 +4,6 @@ import path from "node:path";
 export type TaskPaths = {
   sourceDir: string;
   sourceImage: string;
-  referenceVideoDir: string;
-  referenceVideo: string;
   videoDir: string;
   video: string;
   rawFramesDir: string;
@@ -23,7 +21,6 @@ export async function ensureDir(dir: string): Promise<void> {
 
 export function getTaskPaths(storageRoot: string, taskId: string): TaskPaths {
   const sourceDir = path.join(storageRoot, "uploads", taskId, "source");
-  const referenceVideoDir = path.join(storageRoot, "uploads", taskId, "reference_video");
   const videoDir = path.join(storageRoot, "videos", taskId);
   const rawFramesDir = path.join(storageRoot, "frames", taskId, "raw_frames");
   const cutoutsDir = path.join(storageRoot, "cutouts", taskId, "transparent_frames");
@@ -33,8 +30,6 @@ export function getTaskPaths(storageRoot: string, taskId: string): TaskPaths {
   return {
     sourceDir,
     sourceImage: path.join(sourceDir, "source.png"),
-    referenceVideoDir,
-    referenceVideo: path.join(referenceVideoDir, "reference.mp4"),
     videoDir,
     video: path.join(videoDir, "result.mp4"),
     rawFramesDir,
@@ -50,7 +45,6 @@ export function getTaskPaths(storageRoot: string, taskId: string): TaskPaths {
 export async function ensureTaskDirs(paths: TaskPaths): Promise<void> {
   await Promise.all([
     ensureDir(paths.sourceDir),
-    ensureDir(paths.referenceVideoDir),
     ensureDir(paths.videoDir),
     ensureDir(paths.rawFramesDir),
     ensureDir(paths.cutoutsDir),

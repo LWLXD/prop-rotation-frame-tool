@@ -19,7 +19,6 @@ export type TaskStatus = (typeof taskStatuses)[number];
 
 export type OutputType =
   | "source"
-  | "reference_video"
   | "video"
   | "raw_frame"
   | "cutout"
@@ -70,7 +69,6 @@ export type Task = {
   id: string;
   name: string;
   sourceImagePath: string;
-  referenceVideoPath?: string | null;
   prompt: string;
   rotationMode: RotationMode;
   duration: number;

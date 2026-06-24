@@ -3,8 +3,6 @@ import type { Task, TaskListResponse } from "@prop-tool/shared";
 export type RuntimeConfig = {
   seedanceMock: boolean;
   hasArkApiKey: boolean;
-  hasPublicBaseUrl: boolean;
-  publicBaseUrl: string | null;
   arkBaseUrl: string;
   arkModelId: string;
 };

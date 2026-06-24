@@ -2,7 +2,7 @@
 
 公司内网无账号版工具。核心流程：
 
-上传道具图 -> 创建任务 -> Worker 生成/下载视频 -> 页面预览视频 -> 手动确认抽帧 -> FFmpeg 抽帧 -> rembg 抠图 -> 打包 ZIP -> 页面预览和下载。
+上传道具图 -> 创建任务 -> Worker 通过图片 Base64 调用 Seedance/或本地 mock 生成视频 -> 页面预览视频 -> 手动确认抽帧 -> FFmpeg 抽帧 -> rembg 抠图 -> 打包 ZIP -> 页面预览和下载。
 
 ## 本地启动
 
@@ -32,26 +32,25 @@ D:\LWL\AI\道具旋转逐帧工具\.env
 SEEDANCE_MOCK=true
 ```
 
-这时不会调用火山方舟。你可以上传道具图，也可以上传“参考视频”。参考视频会保存到任务输入目录，但不会作为最终 `result.mp4` 输出；本地 mock 会用上传图片生成占位视频。视频生成完成后，需在任务详情中手动点击“开始抽帧”，才会继续抽帧、抠图、打包。
+这时不会调用火山方舟。本地 mock 会用上传图片生成占位视频。视频生成完成后，需在任务详情中手动点击“开始抽帧”，才会继续抽帧、抠图、打包。
 
 接入火山方舟 Seedance 时，修改 `.env`：
 
 ```env
 SEEDANCE_MOCK=false
-PUBLIC_BASE_URL=https://你的公网或火山可访问域名
 ARK_API_KEY=你的火山方舟 API Key
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ARK_MODEL_ID=doubao-seedance-2-0-260128
 ```
 
-注意：`PUBLIC_BASE_URL` 必须是火山方舟能访问到的地址，因为 Seedance 需要拉取上传的道具图。纯 `localhost` 或公司内网地址通常无法被火山方舟访问。`.env` 已加入 `.gitignore`，不会上传到 GitHub。
+当前版本不启用 `PUBLIC_BASE_URL`，上传图片会在后端统一转成 PNG，并以 `data:image/png;base64,...` 形式传给 Seedance。`.env` 已加入 `.gitignore`，不会上传到 GitHub。
 
-## 参考视频
+## 图片参考
 
-创建任务时，图片是必填，参考视频是可选。当前版本的处理方式：
+创建任务时只上传图片，不启用视频参考。当前版本的处理方式：
 
-- `SEEDANCE_MOCK=true`：参考视频只保存为输入参考；输出视频仍由上传图片生成 mock 视频。
-- `SEEDANCE_MOCK=false`：调用 Seedance 生成视频；参考视频会随任务保存，后续可扩展为正式的视频参考参数。
+- `SEEDANCE_MOCK=true`：不会调用 Seedance，输出视频由上传图片生成 mock 占位视频。
+- `SEEDANCE_MOCK=false`：调用 Seedance，图片以 Base64 data URL 作为 `image_url.url` 输入。
 
 ## 图片格式
 

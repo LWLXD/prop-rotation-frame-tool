@@ -5,7 +5,6 @@ export type AppConfig = {
   port: number;
   dataRoot: string;
   storageRoot: string;
-  publicBaseUrl?: string;
   seedanceMock: boolean;
   rembgServiceUrl: string;
   redisUrl?: string;
@@ -74,7 +73,6 @@ export function getConfig(): AppConfig {
     port: readNumber("PORT", 4000),
     dataRoot: path.resolve(cwd, process.env.DATA_ROOT ?? "./data"),
     storageRoot: path.resolve(cwd, process.env.STORAGE_ROOT ?? "./storage"),
-    publicBaseUrl: process.env.PUBLIC_BASE_URL || undefined,
     seedanceMock: (process.env.SEEDANCE_MOCK ?? "true") !== "false",
     rembgServiceUrl: process.env.REMBG_SERVICE_URL ?? "http://localhost:8001",
     redisUrl: process.env.REDIS_URL || undefined,

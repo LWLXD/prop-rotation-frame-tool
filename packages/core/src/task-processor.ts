@@ -51,11 +51,9 @@ async function generateMockVideo(task: Task, videoPath: string): Promise<void> {
   ]);
 }
 
-function taskSourceImageUrl(config: AppConfig, taskId: string): string {
-  if (!config.publicBaseUrl) {
-    throw new Error("PUBLIC_BASE_URL is required when SEEDANCE_MOCK=false so Seedance can fetch the uploaded image");
-  }
-  return `${config.publicBaseUrl.replace(/\/$/, "")}/api/tasks/${taskId}/preview/source`;
+async function taskSourceImageDataUrl(task: Task): Promise<string> {
+  const image = await fs.readFile(task.sourceImagePath);
+  return `data:image/png;base64,${image.toString("base64")}`;
 }
 
 function withTimeout(seconds: number): AbortSignal {
@@ -112,12 +110,12 @@ function extractSeedanceStatus(payload: unknown): string {
 }
 
 async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record<string, unknown>> {
-  const sourceUrl = taskSourceImageUrl(config, task.id);
+  const sourceImage = await taskSourceImageDataUrl(task);
   const body = {
     model: config.ark.modelId,
     content: [
       { type: "text", text: task.prompt },
-      { type: "image_url", image_url: { url: sourceUrl } }
+      { type: "image_url", image_url: { url: sourceImage } }
     ],
     duration: task.duration,
     ratio: "1:1",
@@ -279,9 +277,6 @@ export async function processVideoGeneration(taskId: string, store: TaskStore, c
     if (!config.seedanceMock) {
       await generateSeedanceVideo(task, config, store, paths.video);
     } else {
-      if (task.referenceVideoPath) {
-        await store.addLog(task.id, "GENERATING_VIDEO", "info", "参考视频已保存为输入参考，mock 模式不会把参考视频作为输出结果");
-      }
       await generateMockVideo(task, paths.video);
     }
     await addFileOutput(store, task.id, "video", paths.video);

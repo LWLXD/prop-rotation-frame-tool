@@ -18,11 +18,6 @@ const upload = multer({
 const store = new TaskStore(config.dataRoot);
 const queue = createQueueClient(config.redisUrl);
 
-function isVideoUpload(file: Express.Multer.File): boolean {
-  const ext = path.extname(file.originalname).toLowerCase();
-  return file.mimetype.startsWith("video/") || [".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv"].includes(ext);
-}
-
 async function normalizeImageUpload(file: Express.Multer.File): Promise<Buffer> {
   try {
     return await sharp(file.buffer, { animated: false })
@@ -58,24 +53,14 @@ app.get("/api/runtime-config", (_req, res) => {
   res.json({
     seedanceMock: config.seedanceMock,
     hasArkApiKey: Boolean(config.ark.apiKey),
-    hasPublicBaseUrl: Boolean(config.publicBaseUrl),
-    publicBaseUrl: config.publicBaseUrl ?? null,
     arkBaseUrl: config.ark.baseUrl,
     arkModelId: config.ark.modelId
   });
 });
 
-app.post(
-  "/api/tasks",
-  upload.fields([
-    { name: "image", maxCount: 1 },
-    { name: "referenceVideo", maxCount: 1 }
-  ]),
-  async (req, res, next) => {
+app.post("/api/tasks", upload.single("image"), async (req, res, next) => {
   try {
-    const files = req.files as Record<string, Express.Multer.File[] | undefined>;
-    const imageFile = files.image?.[0];
-    const referenceVideoFile = files.referenceVideo?.[0];
+    const imageFile = req.file;
 
     if (!imageFile) {
       res.status(400).json({ message: "image is required" });
@@ -83,10 +68,6 @@ app.post(
     }
     if (!imageFile.mimetype.startsWith("image/")) {
       res.status(400).json({ message: "Only image uploads are supported" });
-      return;
-    }
-    if (referenceVideoFile && !isVideoUpload(referenceVideoFile)) {
-      res.status(400).json({ message: "referenceVideo must be a video file" });
       return;
     }
 
@@ -97,16 +78,12 @@ app.post(
     const paths = getTaskPaths(config.storageRoot, taskId);
     await ensureTaskDirs(paths);
     await fs.writeFile(paths.sourceImage, sourcePng);
-    if (referenceVideoFile) {
-      await fs.writeFile(paths.referenceVideo, referenceVideoFile.buffer);
-    }
 
     const now = new Date().toISOString();
     const task: Task = {
       id: taskId,
       name: taskName,
       sourceImagePath: paths.sourceImage,
-      referenceVideoPath: referenceVideoFile ? paths.referenceVideo : null,
       prompt: params.prompt || defaultPrompt,
       rotationMode: params.rotationMode as RotationMode,
       duration: params.duration,
@@ -137,15 +114,6 @@ app.post(
       fileSize: sourcePng.length,
       sortOrder: 0
     });
-    if (referenceVideoFile) {
-      await store.addOutput(taskId, {
-        outputType: "reference_video",
-        filePath: paths.referenceVideo,
-        fileName: referenceVideoFile.originalname || "reference.mp4",
-        fileSize: referenceVideoFile.size,
-        sortOrder: 0
-      });
-    }
     await store.addLog(taskId, "QUEUED", "info", "任务已创建并进入队列");
     await queue.enqueue(taskId);
 
