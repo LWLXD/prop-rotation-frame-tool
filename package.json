@@ -1,0 +1,21 @@
+{
+  "name": "prop-rotation-frame-tool",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n backend,worker,frontend -c cyan,magenta,green \"npm:dev -w apps/backend\" \"npm:dev -w apps/worker\" \"npm:dev -w apps/frontend\"",
+    "build": "npm run build --workspaces",
+    "check": "npm run check --workspaces --if-present",
+    "start:backend": "npm run start -w apps/backend",
+    "start:worker": "npm run start -w apps/worker"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3"
+  }
+}

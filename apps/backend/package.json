@@ -1,0 +1,28 @@
+{
+  "name": "@prop-tool/backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@prop-tool/core": "file:../../packages/core",
+    "@prop-tool/shared": "file:../../packages/shared",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}

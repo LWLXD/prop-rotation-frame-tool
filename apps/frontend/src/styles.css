@@ -1,0 +1,534 @@
+:root {
+  color: #1c222b;
+  background: #eef1f4;
+  font-family:
+    Inter, "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont,
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.app {
+  min-height: 100vh;
+  padding: 18px;
+}
+
+.topbar {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 auto 14px;
+  max-width: 1680px;
+}
+
+.topbar h1,
+.panel h2,
+.detailPanel h3 {
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.topbar h1 {
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.topbar p {
+  color: #66717f;
+  margin: 3px 0 0;
+}
+
+.workspace {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(280px, 360px) minmax(300px, 410px) minmax(460px, 1fr);
+  margin: 0 auto;
+  max-width: 1680px;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #dce2e8;
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.createPanel,
+.taskPanel,
+.detailPanel {
+  min-height: calc(100vh - 92px);
+}
+
+.createPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.panelHeader {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.panel h2 {
+  font-size: 16px;
+}
+
+.panel h3 {
+  color: #35404c;
+  font-size: 14px;
+  margin: 18px 0 10px;
+}
+
+.primaryButton,
+.downloadBar a,
+.toast button {
+  align-items: center;
+  background: #2367c7;
+  border: 0;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 7px;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 13px;
+  text-decoration: none;
+}
+
+.primaryButton:disabled {
+  cursor: wait;
+  opacity: 0.66;
+}
+
+.iconButton,
+.actions button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #cfd7e2;
+  border-radius: 6px;
+  color: #27313d;
+  cursor: pointer;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.dropzone {
+  align-items: center;
+  aspect-ratio: 1 / 1;
+  background: #f6f8fa;
+  border: 1px dashed #aab7c5;
+  border-radius: 8px;
+  color: #6b7785;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.dropzone input {
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+}
+
+.dropzone img,
+.sourcePreview,
+.frameGrid img,
+.taskRow img {
+  object-fit: contain;
+}
+
+.dropzone img {
+  height: 100%;
+  width: 100%;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+label span {
+  color: #526070;
+  font-size: 13px;
+}
+
+input,
+select,
+textarea {
+  background: #fff;
+  border: 1px solid #ccd5df;
+  border-radius: 6px;
+  color: #1c222b;
+  min-height: 36px;
+  padding: 7px 10px;
+  width: 100%;
+}
+
+.fileField input {
+  cursor: pointer;
+}
+
+.fileField small {
+  color: #607082;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+textarea {
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.fieldGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.segmented {
+  background: #edf2f7;
+  border-radius: 7px;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+}
+
+.segmented button {
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: #53606e;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.segmented .selected {
+  background: #ffffff;
+  color: #1d2732;
+  box-shadow: 0 1px 3px rgba(22, 34, 48, 0.12);
+}
+
+.taskPanel {
+  overflow: hidden;
+  padding: 14px;
+}
+
+.count {
+  background: #edf2f7;
+  border-radius: 999px;
+  color: #4d5967;
+  min-width: 28px;
+  padding: 4px 8px;
+  text-align: center;
+}
+
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  max-height: calc(100vh - 146px);
+  overflow: auto;
+}
+
+.taskRow {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e1e7ee;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  min-height: 64px;
+  padding: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.taskRow.selected {
+  border-color: #2367c7;
+  box-shadow: inset 3px 0 0 #2367c7;
+}
+
+.taskRow img {
+  background: #f1f4f7;
+  border-radius: 6px;
+  height: 48px;
+  width: 48px;
+}
+
+.taskRow strong,
+.taskRow small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskRow strong {
+  font-size: 14px;
+}
+
+.taskRow small {
+  color: #687584;
+  margin-top: 4px;
+}
+
+.status {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-style: normal;
+  justify-content: center;
+  min-width: 58px;
+  padding: 4px 8px;
+}
+
+.status.active {
+  background: #e7f0ff;
+  color: #1f5cae;
+}
+
+.status.success {
+  background: #e7f7ec;
+  color: #257341;
+}
+
+.status.failed {
+  background: #ffeceb;
+  color: #be3430;
+}
+
+.status.muted {
+  background: #eef1f4;
+  color: #657180;
+}
+
+.detailPanel {
+  overflow: auto;
+  padding: 16px;
+}
+
+.progress {
+  background: #edf2f7;
+  border-radius: 999px;
+  height: 8px;
+  margin: 16px 0;
+  overflow: hidden;
+}
+
+.progress span {
+  background: #2367c7;
+  display: block;
+  height: 100%;
+  transition: width 0.25s ease;
+}
+
+.detailGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.detailGrid div {
+  background: #f6f8fa;
+  border: 1px solid #e2e8ef;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.detailGrid strong,
+.detailGrid small {
+  display: block;
+}
+
+.detailGrid small {
+  color: #647281;
+  margin-top: 3px;
+}
+
+.previewSplit {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+  margin-top: 16px;
+}
+
+.sourcePreview,
+.previewSplit video {
+  aspect-ratio: 1 / 1;
+  background: #f6f8fa;
+  border: 1px solid #dfe5ec;
+  border-radius: 8px;
+  width: 100%;
+}
+
+.downloadBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.downloadBar a.disabled {
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.frameGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+}
+
+.frameGrid img {
+  aspect-ratio: 1 / 1;
+  background: #f6f8fa;
+  border: 1px solid #dfe5ec;
+  border-radius: 7px;
+  width: 100%;
+}
+
+.checker img {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(45deg, #dfe5ec 25%, transparent 25%),
+    linear-gradient(-45deg, #dfe5ec 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #dfe5ec 75%),
+    linear-gradient(-45deg, transparent 75%, #dfe5ec 75%);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.logs {
+  background: #f7f9fb;
+  border: 1px solid #e0e6ed;
+  border-radius: 8px;
+  max-height: 210px;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+.logs p {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 150px minmax(0, 1fr);
+  margin: 0;
+  padding: 6px 0;
+}
+
+.logs time {
+  color: #687584;
+  font-size: 12px;
+}
+
+.toast {
+  align-items: center;
+  background: #fff5f4;
+  border: 1px solid #ffc8c5;
+  border-radius: 8px;
+  color: #98312d;
+  display: flex;
+  gap: 10px;
+  margin: 0 auto 14px;
+  max-width: 1680px;
+  padding: 10px 12px;
+}
+
+.toast span {
+  flex: 1;
+}
+
+.toast button {
+  background: #be3430;
+  min-height: 30px;
+}
+
+.errorText {
+  background: #fff5f4;
+  border: 1px solid #ffc8c5;
+  border-radius: 8px;
+  color: #98312d;
+  padding: 10px;
+}
+
+.empty {
+  align-items: center;
+  color: #748291;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 1180px) {
+  .workspace {
+    grid-template-columns: minmax(280px, 360px) minmax(420px, 1fr);
+  }
+
+  .detailPanel {
+    grid-column: 1 / -1;
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app {
+    padding: 12px;
+  }
+
+  .workspace,
+  .previewSplit {
+    grid-template-columns: 1fr;
+  }
+
+  .createPanel,
+  .taskPanel,
+  .detailPanel {
+    min-height: auto;
+  }
+
+  .detailGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@prop-tool/worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/worker.ts",
+    "start": "tsx src/worker.ts",
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@prop-tool/core": "file:../../packages/core",
+    "@prop-tool/shared": "file:../../packages/shared",
+    "bullmq": "^5.58.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}

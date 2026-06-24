@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.local
+data/*.json
+storage/uploads/
+storage/videos/
+storage/frames/
+storage/cutouts/
+storage/previews/
+storage/zips/
+*.log
+*.tsbuildinfo

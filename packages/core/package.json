@@ -1,0 +1,23 @@
+{
+  "name": "@prop-tool/core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@prop-tool/shared": "file:../shared",
+    "archiver": "^7.0.1",
+    "bullmq": "^5.58.7"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.3"
+  }
+}
