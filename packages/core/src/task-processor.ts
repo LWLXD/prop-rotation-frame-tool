@@ -182,24 +182,6 @@ async function generateSeedanceVideo(task: Task, config: AppConfig, store: TaskS
   await store.update(task.id, { seedanceRawResponse: resultPayload });
 }
 
-async function transcodeReferenceVideo(task: Task, referencePath: string, videoPath: string): Promise<void> {
-  const scale = `scale=${task.width}:${task.height}:force_original_aspect_ratio=decrease`;
-  const pad = `pad=${task.width}:${task.height}:(ow-iw)/2:(oh-ih)/2:color=white`;
-  await runFfmpeg([
-    "-y",
-    "-i",
-    referencePath,
-    "-t",
-    String(task.duration),
-    "-r",
-    String(task.fps),
-    "-vf",
-    `${scale},${pad},format=yuv420p`,
-    "-an",
-    videoPath
-  ]);
-}
-
 async function extractFrames(task: Task, videoPath: string, outputDir: string): Promise<string[]> {
   await fs.rm(outputDir, { recursive: true, force: true });
   await fs.mkdir(outputDir, { recursive: true });
@@ -296,10 +278,10 @@ export async function processTask(taskId: string, store: TaskStore, config: AppC
     await store.updateStatus(task.id, "GENERATING_VIDEO", 10, "开始生成旋转视频");
     if (!config.seedanceMock) {
       await generateSeedanceVideo(task, config, store, paths.video);
-    } else if (task.referenceVideoPath) {
-      await store.addLog(task.id, "GENERATING_VIDEO", "info", "使用上传的参考视频生成本地处理视频");
-      await transcodeReferenceVideo(task, task.referenceVideoPath, paths.video);
     } else {
+      if (task.referenceVideoPath) {
+        await store.addLog(task.id, "GENERATING_VIDEO", "info", "参考视频已保存为输入参考，mock 模式不会把参考视频作为输出结果");
+      }
       await generateMockVideo(task, paths.video);
     }
     await addFileOutput(store, task.id, "video", paths.video);
@@ -339,7 +321,6 @@ export async function processTask(taskId: string, store: TaskStore, config: AppC
       paths.fullZip,
       [
         { source: paths.sourceDir, name: "source" },
-        { source: paths.referenceVideoDir, name: "reference_video" },
         { source: paths.videoDir, name: "video" },
         { source: paths.rawFramesDir, name: "raw_frames" },
         { source: paths.cutoutsDir, name: "transparent_frames" }

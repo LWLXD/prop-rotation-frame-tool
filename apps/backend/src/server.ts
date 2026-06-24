@@ -23,7 +23,7 @@ function isVideoUpload(file: Express.Multer.File): boolean {
 }
 
 const taskSchema = z.object({
-  taskName: z.string().trim().min(1).max(80).default("未命名任务"),
+  taskName: z.string().trim().max(80).optional().default(""),
   prompt: z.string().trim().max(4000).default(defaultPrompt),
   rotationMode: z.enum(["horizontal_360", "vertical_360", "turntable"]).default("horizontal_360"),
   duration: z.coerce.number().int().min(1).max(15).default(4),
@@ -69,6 +69,7 @@ app.post(
 
     const params = taskSchema.parse(req.body);
     const taskId = randomUUID();
+    const taskName = params.taskName || `任务-${taskId.slice(0, 8)}`;
     const paths = getTaskPaths(config.storageRoot, taskId);
     await ensureTaskDirs(paths);
     await fs.writeFile(paths.sourceImage, imageFile.buffer);
@@ -79,7 +80,7 @@ app.post(
     const now = new Date().toISOString();
     const task: Task = {
       id: taskId,
-      name: params.taskName,
+      name: taskName,
       sourceImagePath: paths.sourceImage,
       referenceVideoPath: referenceVideoFile ? paths.referenceVideo : null,
       prompt: params.prompt || defaultPrompt,
@@ -317,6 +318,11 @@ app.get("/api/tasks/:id/preview/cutout/:index", async (req, res, next) => {
 });
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (error instanceof z.ZodError) {
+    const message = error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+    res.status(400).json({ message });
+    return;
+  }
   const message = error instanceof Error ? error.message : "Unknown error";
   res.status(500).json({ message });
 });
