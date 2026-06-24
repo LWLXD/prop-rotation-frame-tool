@@ -42,6 +42,17 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+app.get("/api/runtime-config", (_req, res) => {
+  res.json({
+    seedanceMock: config.seedanceMock,
+    hasArkApiKey: Boolean(config.ark.apiKey),
+    hasPublicBaseUrl: Boolean(config.publicBaseUrl),
+    publicBaseUrl: config.publicBaseUrl ?? null,
+    arkBaseUrl: config.ark.baseUrl,
+    arkModelId: config.ark.modelId
+  });
+});
+
 app.post(
   "/api/tasks",
   upload.fields([

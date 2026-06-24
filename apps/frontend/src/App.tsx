@@ -7,11 +7,13 @@ import {
   deleteTask,
   downloadUrl,
   extractTask,
+  getRuntimeConfig,
   getTask,
   listTasks,
   previewUrl,
   retryTask
 } from "./api";
+import type { RuntimeConfig } from "./api";
 
 const statusLabels: Record<TaskStatus, string> = {
   PENDING: "等待",
@@ -54,6 +56,7 @@ export function App() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [referenceVideo, setReferenceVideo] = useState<File | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +100,7 @@ export function App() {
 
   useEffect(() => {
     void refresh().catch((err) => setError(err instanceof Error ? err.message : String(err)));
+    void getRuntimeConfig().then(setRuntimeConfig).catch((err) => setError(err instanceof Error ? err.message : String(err)));
     const interval = window.setInterval(() => {
       void refresh().catch((err) => setError(err instanceof Error ? err.message : String(err)));
     }, 2500);
@@ -176,6 +180,16 @@ export function App() {
           <RefreshCw size={18} />
         </button>
       </header>
+
+      {runtimeConfig && (
+        <div className={runtimeConfig.seedanceMock ? "modeBanner mock" : "modeBanner live"}>
+          {runtimeConfig.seedanceMock
+            ? "当前为本地模拟模式：不会调用 Seedance，生成的视频是静态占位视频。"
+            : `当前为 Seedance API 模式：${runtimeConfig.arkModelId}`}
+          {!runtimeConfig.seedanceMock && !runtimeConfig.hasPublicBaseUrl && " 缺少 PUBLIC_BASE_URL，火山方舟无法拉取上传图片。"}
+          {!runtimeConfig.seedanceMock && !runtimeConfig.hasArkApiKey && " 缺少 ARK_API_KEY。"}
+        </div>
+      )}
 
       {error && (
         <div className="toast">

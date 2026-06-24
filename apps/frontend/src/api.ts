@@ -1,5 +1,14 @@
 import type { Task, TaskListResponse } from "@prop-tool/shared";
 
+export type RuntimeConfig = {
+  seedanceMock: boolean;
+  hasArkApiKey: boolean;
+  hasPublicBaseUrl: boolean;
+  publicBaseUrl: string | null;
+  arkBaseUrl: string;
+  arkModelId: string;
+};
+
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -21,6 +30,10 @@ export async function listTasks(): Promise<TaskListResponse> {
 
 export async function getTask(id: string): Promise<Task> {
   return request(`/api/tasks/${id}`);
+}
+
+export async function getRuntimeConfig(): Promise<RuntimeConfig> {
+  return request("/api/runtime-config");
 }
 
 export async function retryTask(id: string): Promise<void> {
