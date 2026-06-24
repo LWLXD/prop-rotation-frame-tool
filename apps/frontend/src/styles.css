@@ -105,6 +105,7 @@ a {
 }
 
 .primaryButton,
+.extractButton,
 .downloadBar a,
 .toast button {
   align-items: center;
@@ -221,6 +222,13 @@ textarea {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.subhead {
+  color: #526070;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 2px;
 }
 
 .segmented {
@@ -409,6 +417,11 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
+}
+
+.extractButton {
+  background: #2f6f4f;
+  border: 0;
 }
 
 .downloadBar a.disabled {

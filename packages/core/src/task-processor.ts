@@ -262,7 +262,7 @@ async function addFileOutput(store: TaskStore, taskId: string, outputType: Param
   });
 }
 
-export async function processTask(taskId: string, store: TaskStore, config: AppConfig): Promise<void> {
+export async function processVideoGeneration(taskId: string, store: TaskStore, config: AppConfig): Promise<void> {
   const task = await store.get(taskId);
   if (!task) {
     throw new Error(`Task not found: ${taskId}`);
@@ -286,10 +286,29 @@ export async function processTask(taskId: string, store: TaskStore, config: AppC
     }
     await addFileOutput(store, task.id, "video", paths.video);
     await store.update(task.id, { videoPath: paths.video });
-    await store.updateStatus(task.id, "VIDEO_DOWNLOADED", 35, "视频已保存到本地 storage");
+    await store.updateStatus(task.id, "VIDEO_DOWNLOADED", 40, "视频已生成并保存，等待确认是否抽帧");
+  } catch (error) {
+    await store.fail(task.id, error instanceof Error ? error.message : String(error));
+  }
+}
 
+export async function processFrameExtraction(taskId: string, store: TaskStore, config: AppConfig): Promise<void> {
+  const task = await store.get(taskId);
+  if (!task) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  if (task.status === "CANCELLED") {
+    return;
+  }
+
+  const paths = getTaskPaths(config.storageRoot, task.id);
+  await ensureTaskDirs(paths);
+
+  try {
+    const videoPath = task.videoPath ?? paths.video;
+    await fs.stat(videoPath);
     await store.updateStatus(task.id, "EXTRACTING_FRAMES", 45, "开始使用 FFmpeg 抽帧");
-    const rawFrames = await extractFrames(task, paths.video, paths.rawFramesDir);
+    const rawFrames = await extractFrames(task, videoPath, paths.rawFramesDir);
     for (const [index, file] of rawFrames.entries()) {
       await addFileOutput(store, task.id, "raw_frame", path.join(paths.rawFramesDir, file), index + 1);
     }
@@ -335,6 +354,19 @@ export async function processTask(taskId: string, store: TaskStore, config: AppC
   } catch (error) {
     await store.fail(task.id, error instanceof Error ? error.message : String(error));
   }
+}
+
+export async function processTask(
+  taskId: string,
+  store: TaskStore,
+  config: AppConfig,
+  action: "generate" | "extract" = "generate"
+): Promise<void> {
+  if (action === "extract") {
+    await processFrameExtraction(taskId, store, config);
+    return;
+  }
+  await processVideoGeneration(taskId, store, config);
 }
 
 export function streamFile(filePath: string) {

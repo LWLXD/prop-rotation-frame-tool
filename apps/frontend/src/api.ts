@@ -27,6 +27,10 @@ export async function retryTask(id: string): Promise<void> {
   await request(`/api/tasks/${id}/retry`, { method: "POST" });
 }
 
+export async function extractTask(id: string): Promise<void> {
+  await request(`/api/tasks/${id}/extract`, { method: "POST" });
+}
+
 export async function cancelTask(id: string): Promise<void> {
   await request(`/api/tasks/${id}/cancel`, { method: "POST" });
 }

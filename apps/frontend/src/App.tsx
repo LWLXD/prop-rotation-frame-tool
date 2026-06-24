@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, RefreshCw, RotateCw, Trash2, Upload, XCircle } from "lucide-react";
+import { Download, Images, RefreshCw, RotateCw, Trash2, Upload, XCircle } from "lucide-react";
 import { defaultPrompt, type Task, type TaskStatus } from "@prop-tool/shared";
 import {
   cancelTask,
   createTask,
   deleteTask,
   downloadUrl,
+  extractTask,
   getTask,
   listTasks,
   previewUrl,
@@ -72,7 +73,9 @@ export function App() {
   const token = selectedTask?.updatedAt ?? "";
   const rawFrameCount = countOutputs(selectedTask, "raw_frame");
   const cutoutCount = countOutputs(selectedTask, "cutout");
-  const canDownload = selectedTask?.status === "SUCCESS";
+  const canDownloadVideo = Boolean(selectedTask?.videoPath);
+  const canDownloadAssets = selectedTask?.status === "SUCCESS";
+  const canExtract = selectedTask?.status === "VIDEO_DOWNLOADED" && Boolean(selectedTask.videoPath);
 
   const firstFrames = useMemo(() => {
     const raw = Array.from({ length: Math.min(8, rawFrameCount) }, (_, index) => index + 1);
@@ -188,7 +191,7 @@ export function App() {
             <h2>创建任务</h2>
             <button className="primaryButton" disabled={submitting} type="submit">
               <Upload size={17} />
-              {submitting ? "提交中" : "提交"}
+              {submitting ? "提交中" : "生成视频"}
             </button>
           </div>
 
@@ -242,6 +245,8 @@ export function App() {
               <input type="number" min="128" max="2048" value={form.height} onChange={(event) => updateNumber("height", event.target.value)} />
             </label>
           </div>
+
+          <div className="subhead">抽帧参数（视频生成后使用）</div>
 
           <div className="segmented">
             <button
@@ -313,7 +318,12 @@ export function App() {
                   <h2>{selectedTask.name}</h2>
                   <span className={classForStatus(selectedTask.status)}>{statusLabels[selectedTask.status]}</span>
                 </div>
-                <div className="actions">
+              <div className="actions">
+                  {canExtract && (
+                    <button title="开始抽帧" onClick={() => void runAction(() => extractTask(selectedTask.id))}>
+                      <Images size={17} />
+                    </button>
+                  )}
                   <button title="重试" onClick={() => void runAction(() => retryTask(selectedTask.id))}>
                     <RotateCw size={17} />
                   </button>
@@ -361,16 +371,21 @@ export function App() {
               </div>
 
               <div className="downloadBar">
-                <a className={!canDownload ? "disabled" : ""} href={downloadUrl(selectedTask.id, "video")}>
+                {canExtract && (
+                  <button className="extractButton" onClick={() => void runAction(() => extractTask(selectedTask.id))}>
+                    <Images size={16} /> 开始抽帧
+                  </button>
+                )}
+                <a className={!canDownloadVideo ? "disabled" : ""} href={downloadUrl(selectedTask.id, "video")}>
                   <Download size={16} /> 视频
                 </a>
-                <a className={!canDownload ? "disabled" : ""} href={downloadUrl(selectedTask.id, "raw-frames")}>
+                <a className={!canDownloadAssets ? "disabled" : ""} href={downloadUrl(selectedTask.id, "raw-frames")}>
                   <Download size={16} /> 原始帧
                 </a>
-                <a className={!canDownload ? "disabled" : ""} href={downloadUrl(selectedTask.id, "cutouts")}>
+                <a className={!canDownloadAssets ? "disabled" : ""} href={downloadUrl(selectedTask.id, "cutouts")}>
                   <Download size={16} /> 透明帧
                 </a>
-                <a className={!canDownload ? "disabled" : ""} href={downloadUrl(selectedTask.id, "zip")}>
+                <a className={!canDownloadAssets ? "disabled" : ""} href={downloadUrl(selectedTask.id, "zip")}>
                   <Download size={16} /> 完整包
                 </a>
               </div>

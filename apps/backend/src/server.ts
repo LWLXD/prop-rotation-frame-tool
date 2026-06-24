@@ -168,10 +168,32 @@ app.post("/api/tasks/:id/retry", async (req, res, next) => {
       res.status(404).json({ message: "Task not found" });
       return;
     }
-    await store.update(req.params.id, { status: "QUEUED", progress: 0, errorMessage: null, finishedAt: null });
-    await store.addLog(req.params.id, "QUEUED", "info", "任务已重新进入队列");
-    await queue.enqueue(req.params.id);
-    res.json({ taskId: req.params.id, status: "QUEUED" });
+    const action = task.videoPath ? "extract" : "generate";
+    const nextStatus = action === "extract" ? "EXTRACTING_FRAMES" : "QUEUED";
+    await store.update(req.params.id, { status: nextStatus, progress: action === "extract" ? 45 : 0, errorMessage: null, finishedAt: null });
+    await store.addLog(req.params.id, nextStatus, "info", action === "extract" ? "任务已重新进入抽帧队列" : "任务已重新进入视频生成队列");
+    await queue.enqueue(req.params.id, action);
+    res.json({ taskId: req.params.id, status: nextStatus });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/tasks/:id/extract", async (req, res, next) => {
+  try {
+    const task = await store.get(req.params.id);
+    if (!task) {
+      res.status(404).json({ message: "Task not found" });
+      return;
+    }
+    if (!task.videoPath) {
+      res.status(400).json({ message: "Video is not ready yet" });
+      return;
+    }
+    await store.update(req.params.id, { status: "EXTRACTING_FRAMES", progress: 45, errorMessage: null, finishedAt: null });
+    await store.addLog(req.params.id, "EXTRACTING_FRAMES", "info", "已确认开始抽帧、抠图和打包");
+    await queue.enqueue(req.params.id, "extract");
+    res.json({ taskId: req.params.id, status: "EXTRACTING_FRAMES" });
   } catch (error) {
     next(error);
   }

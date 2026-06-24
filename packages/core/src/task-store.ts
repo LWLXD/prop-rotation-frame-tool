@@ -45,7 +45,7 @@ export class TaskStore {
   async listProcessable(): Promise<Task[]> {
     const db = await this.read();
     return db.tasks
-      .filter((task) => task.status === "QUEUED" || task.status === "PENDING")
+      .filter((task) => task.status === "QUEUED" || task.status === "PENDING" || task.status === "EXTRACTING_FRAMES")
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 

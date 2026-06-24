@@ -1,5 +1,6 @@
 import { Worker as BullWorker } from "bullmq";
 import { getConfig, processTask, redisConnectionOptions, taskQueueName, TaskStore } from "@prop-tool/core";
+import type { QueueAction } from "@prop-tool/core";
 
 const config = getConfig();
 const store = new TaskStore(config.dataRoot);
@@ -11,7 +12,7 @@ async function processNextQueuedTask(): Promise<void> {
   try {
     const [task] = await store.listProcessable();
     if (task) {
-      await processTask(task.id, store, config);
+      await processTask(task.id, store, config, task.status === "EXTRACTING_FRAMES" ? "extract" : "generate");
     }
   } finally {
     running = false;
@@ -35,10 +36,11 @@ async function startBullMqWorker(redisUrl: string): Promise<void> {
     taskQueueName,
     async (job) => {
       const taskId = job.data?.taskId as string | undefined;
+      const action = (job.data?.action ?? "generate") as QueueAction;
       if (!taskId) {
         throw new Error("Job missing taskId");
       }
-      await processTask(taskId, store, config);
+      await processTask(taskId, store, config, action);
     },
     { connection, concurrency: 1 }
   );
