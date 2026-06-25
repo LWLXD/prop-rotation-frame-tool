@@ -21,7 +21,7 @@ const statusLabels: Record<TaskStatus, string> = {
   GENERATING_VIDEO: "生成视频",
   VIDEO_GENERATED: "视频生成",
   DOWNLOADING_VIDEO: "下载视频",
-  VIDEO_DOWNLOADED: "视频已存",
+  VIDEO_DOWNLOADED: "视频已保存",
   EXTRACTING_FRAMES: "抽帧",
   FRAMES_EXTRACTED: "抽帧完成",
   REMOVING_BG: "抠图",
@@ -336,7 +336,7 @@ export function App() {
                   <h2>{selectedTask.name}</h2>
                   <span className={classForStatus(selectedTask.status)}>{statusLabels[selectedTask.status]}</span>
                 </div>
-              <div className="actions">
+                <div className="actions">
                   {canExtract && (
                     <button title="开始抽帧" onClick={() => void runAction(() => extractTask(selectedTask.id))}>
                       <Images size={17} />
