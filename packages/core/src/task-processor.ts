@@ -126,11 +126,15 @@ async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record
   if (!task.sourceImageUrl) {
     throw new Error("OSS source image URL is required when SEEDANCE_MOCK=false");
   }
+  const referenceImageContent = (task.referenceImages ?? [])
+    .filter((item) => Boolean(item.url))
+    .map((item) => ({ type: "image_url", image_url: { url: item.url as string } }));
   const body = {
     model: config.ark.modelId,
     content: [
       { type: "text", text: task.prompt },
-      { type: "image_url", image_url: { url: task.sourceImageUrl } }
+      { type: "image_url", image_url: { url: task.sourceImageUrl } },
+      ...referenceImageContent
     ],
     duration: task.duration,
     ratio: "1:1",

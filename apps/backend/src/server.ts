@@ -6,7 +6,15 @@ import express from "express";
 import multer from "multer";
 import sharp from "sharp";
 import { z } from "zod";
-import { defaultPrompt, taskStatuses, type FrameExtractMode, type RotationMode, type Task } from "@prop-tool/shared";
+import {
+  defaultPrompt,
+  taskStatuses,
+  type FrameExtractMode,
+  type ReferenceImageRole,
+  type RotationMode,
+  type Task,
+  type TaskReferenceImage
+} from "@prop-tool/shared";
 import { assertInside, createOssService, createQueueClient, ensureTaskDirs, getConfig, getTaskPaths, TaskStore } from "@prop-tool/core";
 
 const config = getConfig();
@@ -18,6 +26,12 @@ const upload = multer({
 const store = new TaskStore(config.dataRoot);
 const queue = createQueueClient(config.redisUrl);
 const oss = createOssService(config);
+
+const referenceImageFields: Array<{ field: string; role: ReferenceImageRole; fileName: string; sortOrder: number }> = [
+  { field: "referenceFrontImage", role: "front", fileName: "reference-front.png", sortOrder: 1 },
+  { field: "referenceSideImage", role: "side", fileName: "reference-side.png", sortOrder: 2 },
+  { field: "referenceBackImage", role: "back", fileName: "reference-back.png", sortOrder: 3 }
+];
 
 async function normalizeImageUpload(file: Express.Multer.File): Promise<Buffer> {
   try {
@@ -36,6 +50,18 @@ function filesByField(req: express.Request): Record<string, Express.Multer.File[
 
 function isVideoUpload(file: Express.Multer.File): boolean {
   return file.mimetype.startsWith("video/");
+}
+
+function buildPromptWithReferenceViews(prompt: string, referenceImages: TaskReferenceImage[]): string {
+  if (referenceImages.length === 0) {
+    return prompt;
+  }
+  const roles = referenceImages.map((item) => item.role).join(", ");
+  return [
+    prompt,
+    "",
+    `Additional reference views are attached: ${roles}. Use these extra images only as structure references for front/side/back silhouette, thickness, side proportion, and rear details. Do not create a split-screen three-view layout in the output video.`
+  ].join("\n");
 }
 
 const taskSchema = z.object({
@@ -74,12 +100,19 @@ app.get("/api/runtime-config", (_req, res) => {
 
 app.post("/api/tasks", upload.fields([
   { name: "image", maxCount: 1 },
+  { name: "referenceFrontImage", maxCount: 1 },
+  { name: "referenceSideImage", maxCount: 1 },
+  { name: "referenceBackImage", maxCount: 1 },
   { name: "referenceVideo", maxCount: 1 }
 ]), async (req, res, next) => {
   try {
     const uploaded = filesByField(req);
     const imageFile = uploaded.image?.[0];
     const referenceVideoFile = uploaded.referenceVideo?.[0];
+    const referenceImageFiles = referenceImageFields.flatMap((item) => {
+      const file = uploaded[item.field]?.[0];
+      return file ? [{ ...item, file }] : [];
+    });
 
     if (!imageFile) {
       res.status(400).json({ message: "image is required" });
@@ -93,6 +126,12 @@ app.post("/api/tasks", upload.fields([
       res.status(400).json({ message: "referenceVideo must be a video file" });
       return;
     }
+    for (const item of referenceImageFiles) {
+      if (!item.file.mimetype.startsWith("image/")) {
+        res.status(400).json({ message: `${item.field} must be an image file` });
+        return;
+      }
+    }
 
     const params = taskSchema.parse(req.body);
     const taskId = randomUUID();
@@ -104,6 +143,22 @@ app.post("/api/tasks", upload.fields([
     const sourceUpload = oss.enabled
       ? await oss.uploadTempObject(taskId, "source-image", "source.png", sourcePng, "image/png")
       : null;
+    const referenceImages: TaskReferenceImage[] = [];
+    for (const item of referenceImageFiles) {
+      const referencePng = await normalizeImageUpload(item.file);
+      const filePath = path.join(paths.sourceDir, item.fileName);
+      await fs.writeFile(filePath, referencePng);
+      const referenceUpload = oss.enabled
+        ? await oss.uploadTempObject(taskId, "reference-image", item.fileName, referencePng, "image/png")
+        : null;
+      referenceImages.push({
+        role: item.role,
+        filePath,
+        fileName: item.fileName,
+        url: referenceUpload?.url ?? null,
+        ossKey: referenceUpload?.key ?? null
+      });
+    }
     const referenceVideoUpload = oss.enabled && referenceVideoFile
       ? await oss.uploadTempObject(
         taskId,
@@ -121,10 +176,11 @@ app.post("/api/tasks", upload.fields([
       sourceImagePath: paths.sourceImage,
       sourceImageUrl: sourceUpload?.url ?? null,
       sourceImageOssKey: sourceUpload?.key ?? null,
+      referenceImages,
       referenceVideoPath: null,
       referenceVideoUrl: referenceVideoUpload?.url ?? null,
       referenceVideoOssKey: referenceVideoUpload?.key ?? null,
-      prompt: params.prompt || defaultPrompt,
+      prompt: buildPromptWithReferenceViews(params.prompt || defaultPrompt, referenceImages),
       rotationMode: params.rotationMode as RotationMode,
       duration: params.duration,
       fps: params.fps,
@@ -154,6 +210,20 @@ app.post("/api/tasks", upload.fields([
       fileSize: sourcePng.length,
       sortOrder: 0
     });
+    for (const item of referenceImages) {
+      await store.addOutput(taskId, {
+        outputType: "reference_image",
+        filePath: item.filePath,
+        fileName: item.fileName,
+        fileSize: (await fs.stat(item.filePath)).size,
+        sortOrder: referenceImageFields.find((field) => field.role === item.role)?.sortOrder ?? 0
+      });
+    }
+    if (referenceImages.length > 0) {
+      await store.addLog(taskId, "QUEUED", "info", "Reference view images uploaded", {
+        roles: referenceImages.map((item) => item.role)
+      });
+    }
     if (referenceVideoUpload) {
       await store.addLog(taskId, "QUEUED", "info", "参考视频已上传至 OSS 临时目录", { ossKey: referenceVideoUpload.key });
     }
@@ -265,7 +335,8 @@ app.delete("/api/tasks/:id", async (req, res, next) => {
     }
     await Promise.all([
       oss.deleteObject(task.sourceImageOssKey),
-      oss.deleteObject(task.referenceVideoOssKey)
+      oss.deleteObject(task.referenceVideoOssKey),
+      ...(task.referenceImages ?? []).map((item) => oss.deleteObject(item.ossKey))
     ]);
     await store.remove(taskId);
     res.status(204).send();

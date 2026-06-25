@@ -5,7 +5,7 @@ import type { AppConfig } from "./config.js";
 
 type OssClient = InstanceType<typeof OSS>;
 
-export type TempUploadKind = "source-image" | "reference-video";
+export type TempUploadKind = "source-image" | "reference-image" | "reference-video";
 
 export type TempUploadResult = {
   key: string;

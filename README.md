@@ -43,7 +43,8 @@ and backend ports in Windows Firewall, usually `5183` and `4100`.
 
 ## Workflow
 
-1. Upload a reference image and create a task.
+1. Upload the main reference image. Optionally upload front, side, and back
+   reference-view images for better structure guidance.
 2. The worker generates a video through Seedance, or a local placeholder video
    when mock mode is enabled.
 3. Preview the generated video in the task detail panel.
@@ -52,8 +53,8 @@ and backend ports in Windows Firewall, usually `5183` and `4100`.
 5. Download the video, raw frames, transparent frames, or full ZIP package.
 
 Generated videos, frames, cutouts, and ZIP packages stay on local disk. Only
-reference images and optional reference videos are uploaded to OSS for use as
-reference URLs.
+reference images, optional front/side/back reference-view images, and optional
+reference videos are uploaded to OSS for use as reference URLs.
 
 ## API Configuration
 
@@ -86,7 +87,8 @@ passes the OSS URL to Seedance.
 
 ## OSS Reference Asset Configuration
 
-Only reference images and optional reference videos are uploaded to OSS.
+Only the main reference image, optional front/side/back reference-view images,
+and optional reference videos are uploaded to OSS.
 Generated outputs remain local.
 
 All OSS operations are restricted to `wanglin/`, and temporary reference assets
@@ -110,11 +112,17 @@ reference OSS objects when that task is deleted.
 
 ## Image And Video References
 
-Reference image upload is required. The frontend accepts common image formats,
-and the backend normalizes them to `source.png` before storage and API use.
+Reference image upload is required. The frontend also provides optional
+front/side/back reference-view upload slots. The backend accepts common image
+formats and normalizes all reference images to PNG before storage and API use.
 
 Recommended image formats: PNG, JPG/JPEG, and WebP. The backend also attempts to
 decode formats supported by Sharp, such as AVIF, TIFF, and GIF.
+
+When front/side/back reference-view images are provided, their OSS URLs are added
+to the Seedance image content together with the main reference image. The prompt
+is also strengthened so the views are used as structure references instead of as
+a split-screen layout.
 
 Optional reference video upload is stored as a reference URL, but it is not added
 to the Seedance request body yet. This avoids API failures before the exact
