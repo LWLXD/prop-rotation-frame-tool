@@ -28,7 +28,7 @@ function Stop-RootProcesses {
   $processes = Get-CimInstance Win32_Process | Where-Object {
     $_.ProcessId -ne $currentPid -and
     $_.CommandLine -like "*$Root*" -and
-    ($_.Name -like "node*" -or $_.Name -like "cmd*")
+    ($_.Name -like "node*" -or $_.Name -like "cmd*" -or $_.Name -like "python*")
   }
 
   foreach ($process in $processes) {

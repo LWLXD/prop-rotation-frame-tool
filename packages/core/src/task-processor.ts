@@ -28,6 +28,24 @@ async function listPngFiles(dir: string): Promise<string[]> {
   }
 }
 
+async function pngHasAlphaChannel(filePath: string): Promise<boolean> {
+  const handle = await fs.open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(26);
+    await handle.read(buffer, 0, buffer.length, 0);
+    const isPng =
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47;
+    if (!isPng) return false;
+    const colorType = buffer[25];
+    return colorType === 4 || colorType === 6;
+  } finally {
+    await handle.close();
+  }
+}
+
 async function runFfmpeg(args: string[]): Promise<void> {
   await execFileAsync("ffmpeg", args, { windowsHide: true, maxBuffer: 1024 * 1024 * 10 });
 }
@@ -218,13 +236,11 @@ async function removeBackground(task: Task, config: AppConfig, rawDir: string, c
       task.id,
       "REMOVING_BG",
       "warn",
-      "rembg-service unavailable; copied raw frames as placeholder cutouts",
+      "rembg-service unavailable; background removal failed",
       { error: error instanceof Error ? error.message : String(error) }
     );
+    throw error;
   }
-
-  const rawFrames = await listPngFiles(rawDir);
-  await Promise.all(rawFrames.map((file) => fs.copyFile(path.join(rawDir, file), path.join(cutoutDir, file))));
 }
 
 async function writeZip(zipPath: string, entries: Array<{ source: string; name: string }>, meta?: unknown): Promise<void> {
@@ -309,6 +325,18 @@ export async function processFrameExtraction(taskId: string, store: TaskStore, c
     await store.updateStatus(task.id, "REMOVING_BG", 72, "开始对关键帧抠图");
     await removeBackground(task, config, paths.rawFramesDir, paths.cutoutsDir, store);
     const cutouts = await listPngFiles(paths.cutoutsDir);
+    if (cutouts.length === 0) {
+      throw new Error("rembg-service did not output any transparent frames");
+    }
+    const invalidCutout = await Promise.all(
+      cutouts.map(async (file) => ({
+        file,
+        hasAlpha: await pngHasAlphaChannel(path.join(paths.cutoutsDir, file))
+      }))
+    ).then((items) => items.find((item) => !item.hasAlpha));
+    if (invalidCutout) {
+      throw new Error(`Background removal output is not a transparent PNG: ${invalidCutout.file}`);
+    }
     for (const [index, file] of cutouts.entries()) {
       await addFileOutput(store, task.id, "cutout", path.join(paths.cutoutsDir, file), index + 1);
     }

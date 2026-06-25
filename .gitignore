@@ -12,3 +12,5 @@ storage/zips/
 *.log
 *.tsbuildinfo
 .runtime-logs/
+.venv-rembg/
+__pycache__/

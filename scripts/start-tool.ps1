@@ -1,6 +1,7 @@
 param(
   [int]$FrontendPort = 5183,
   [int]$BackendPort = 4100,
+  [int]$RembgPort = 8001,
   [switch]$NoBrowser
 )
 
@@ -9,6 +10,8 @@ $Root = Split-Path -Parent $PSScriptRoot
 $LogDir = Join-Path $Root ".runtime-logs"
 $PidFile = Join-Path $LogDir "tool-pids.json"
 $WatcherScript = Join-Path $PSScriptRoot "watch-tool-parent.ps1"
+$RembgPython = Join-Path $Root ".venv-rembg\Scripts\python.exe"
+$RembgRequirements = Join-Path $Root "apps\rembg-service\requirements.txt"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
 function Stop-ProcessTree {
@@ -30,7 +33,7 @@ function Stop-RootProcesses {
   $processes = Get-CimInstance Win32_Process | Where-Object {
     $_.ProcessId -ne $currentPid -and
     $_.CommandLine -like "*$Root*" -and
-    ($_.Name -like "node*" -or $_.Name -like "cmd*")
+    ($_.Name -like "node*" -or $_.Name -like "cmd*" -or $_.Name -like "python*")
   }
 
   foreach ($process in $processes) {
@@ -191,6 +194,34 @@ function Start-ToolProcess {
   }
 }
 
+function Ensure-RembgEnvironment {
+  if (!(Test-Path $RembgPython)) {
+    Write-Host "Preparing rembg Python environment. First run may take a while..."
+    python -m venv (Join-Path $Root ".venv-rembg")
+    if ($LASTEXITCODE -ne 0) {
+      throw "Could not create .venv-rembg. Please make sure Python 3.11 is available."
+    }
+
+    & $RembgPython -m pip install --upgrade pip
+    if ($LASTEXITCODE -ne 0) {
+      throw "Could not upgrade pip in .venv-rembg"
+    }
+  }
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  & $RembgPython -c "from rembg import remove; print('rembg ok')" > $null 2>&1
+  $rembgCheckExitCode = $LASTEXITCODE
+  $ErrorActionPreference = $previousErrorActionPreference
+  if ($rembgCheckExitCode -ne 0) {
+    Write-Host "Installing or repairing rembg dependencies..."
+    & $RembgPython -m pip install -r $RembgRequirements
+    if ($LASTEXITCODE -ne 0) {
+      throw "Could not install rembg-service requirements"
+    }
+  }
+}
+
 function Quote-CommandArgument {
   param([string]$Value)
 
@@ -230,15 +261,21 @@ if (Test-PortInUse -Port $FrontendPort) {
 if (Test-PortInUse -Port $BackendPort) {
   throw "Backend port $BackendPort is already in use. Run with another port, for example: .\start-tool.bat -BackendPort 4101"
 }
+if (Test-PortInUse -Port $RembgPort) {
+  throw "rembg port $RembgPort is already in use. Run with another port, for example: .\start-tool.bat -RembgPort 8002"
+}
 
 $env:PORT = "$BackendPort"
 $env:VITE_API_BASE_URL = "http://localhost:$BackendPort"
+$env:REMBG_SERVICE_URL = "http://localhost:$RembgPort"
 $env:FORCE_COLOR = "1"
+Ensure-RembgEnvironment
 $jobHandle = New-KillOnCloseJob
 $started = @()
 $watcherProcessId = $null
 
 try {
+  $started += Start-ToolProcess -Name "rembg" -Command "`"$RembgPython`" -m uvicorn main:app --app-dir apps\rembg-service --host 127.0.0.1 --port $RembgPort" -JobHandle $jobHandle
   $started += Start-ToolProcess -Name "backend" -Command "npm run dev -w apps/backend" -JobHandle $jobHandle
   $started += Start-ToolProcess -Name "worker" -Command "npm run dev -w apps/worker" -JobHandle $jobHandle
   $started += Start-ToolProcess -Name "frontend" -Command "npm run dev -w apps/frontend -- --host 0.0.0.0 --port $FrontendPort --strictPort" -JobHandle $jobHandle
@@ -250,10 +287,11 @@ try {
   Write-Host "Prop rotation tool is starting..."
   Write-Host "Frontend: http://localhost:$FrontendPort/"
   Write-Host "Backend:  http://localhost:$BackendPort/"
+  Write-Host "rembg:    http://localhost:$RembgPort/"
   Write-Host "Logs:     $LogDir"
   Write-Host ""
   Write-Host "Keep this window open while using the tool."
-  Write-Host "Press Ctrl+C or close this window to stop backend, worker, and frontend."
+  Write-Host "Press Ctrl+C or close this window to stop rembg, backend, worker, and frontend."
   Write-Host ""
 
   Start-Sleep -Seconds 3

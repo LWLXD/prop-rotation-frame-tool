@@ -26,11 +26,12 @@ npm run dev
 
 - 前端：http://localhost:5183
 - 后端：http://localhost:4100
+- rembg 抠图服务：http://localhost:8001
 
-保持脚本窗口打开即可使用工具；按 `Ctrl+C` 或关闭脚本窗口，会自动关闭该脚本启动的前端、后端和 worker，不会主动关闭其它项目。需要临时换端口时可以这样启动：
+首次启动会自动创建 `.venv-rembg` 并安装 rembg 抠图依赖，可能需要等待一段时间。保持脚本窗口打开即可使用工具；按 `Ctrl+C` 或关闭脚本窗口，会自动关闭该脚本启动的 rembg、前端、后端和 worker，不会主动关闭其它项目。需要临时换端口时可以这样启动：
 
 ```powershell
-.\start-tool.bat -FrontendPort 5184 -BackendPort 4101
+.\start-tool.bat -FrontendPort 5184 -BackendPort 4101 -RembgPort 8002
 ```
 
 默认 `SEEDANCE_MOCK=true`，没有火山方舟 API Key 时会用 FFmpeg 基于上传图片生成一个占位 MP4。视频生成完成后，需要在任务详情中手动点击“开始抽帧”，才会继续抽帧、抠图和打包。

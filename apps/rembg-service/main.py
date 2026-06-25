@@ -7,8 +7,10 @@ from pydantic import BaseModel
 
 try:
     from rembg import remove
-except Exception:  # pragma: no cover
+    rembg_import_error = None
+except Exception as exc:  # pragma: no cover
     remove = None
+    rembg_import_error = str(exc)
 
 
 app = FastAPI(title="Prop Tool rembg Service")
@@ -21,7 +23,7 @@ class BatchRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "rembg_loaded": remove is not None}
+    return {"status": "ok", "rembg_loaded": remove is not None, "rembg_import_error": rembg_import_error}
 
 
 @app.post("/remove-bg")
