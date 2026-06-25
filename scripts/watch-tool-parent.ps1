@@ -47,11 +47,11 @@ while ($true) {
 
 try {
   if (Test-Path $PidFile) {
-    $pids = Get-Content -Raw $PidFile | ConvertFrom-Json
-    foreach ($pid in $pids) {
-      $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $pid"
+    $servicePids = Get-Content -Raw $PidFile | ConvertFrom-Json
+    foreach ($servicePid in $servicePids) {
+      $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $servicePid"
       if ($processInfo -and $processInfo.CommandLine -like "*$Root*") {
-        Stop-ProcessTree -ProcessId ([int]$pid)
+        Stop-ProcessTree -ProcessId ([int]$servicePid)
       }
     }
   }

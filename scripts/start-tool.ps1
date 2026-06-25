@@ -191,6 +191,37 @@ function Start-ToolProcess {
   }
 }
 
+function Quote-CommandArgument {
+  param([string]$Value)
+
+  '"' + $Value.Replace('"', '\"') + '"'
+}
+
+function Start-DetachedWatcher {
+  $watcherLog = Join-Path $LogDir "watcher.log"
+  $watcherCommand = @(
+    "powershell.exe",
+    "-NoProfile",
+    "-ExecutionPolicy Bypass",
+    "-File $(Quote-CommandArgument $WatcherScript)",
+    "-ParentPid $PID",
+    "-PidFile $(Quote-CommandArgument $PidFile)",
+    "-Root $(Quote-CommandArgument $Root)",
+    "> $(Quote-CommandArgument $watcherLog) 2>&1"
+  ) -join " "
+  $commandLine = "cmd.exe /d /s /c `"$watcherCommand`""
+
+  $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+    CommandLine = $commandLine
+    CurrentDirectory = $Root
+  }
+  if ($result.ReturnValue -ne 0) {
+    throw "Could not start cleanup watcher. Win32_Process.Create returned $($result.ReturnValue)"
+  }
+
+  [int]$result.ProcessId
+}
+
 Stop-PreviousInstance
 
 if (Test-PortInUse -Port $FrontendPort) {
@@ -205,7 +236,7 @@ $env:VITE_API_BASE_URL = "http://localhost:$BackendPort"
 $env:FORCE_COLOR = "1"
 $jobHandle = New-KillOnCloseJob
 $started = @()
-$watcherProcess = $null
+$watcherProcessId = $null
 
 try {
   $started += Start-ToolProcess -Name "backend" -Command "npm run dev -w apps/backend" -JobHandle $jobHandle
@@ -213,8 +244,7 @@ try {
   $started += Start-ToolProcess -Name "frontend" -Command "npm run dev -w apps/frontend -- --host 0.0.0.0 --port $FrontendPort --strictPort" -JobHandle $jobHandle
 
   $started.Process.Id | ConvertTo-Json | Set-Content -Path $PidFile -Encoding UTF8
-  $watcherArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$WatcherScript`" -ParentPid $PID -PidFile `"$PidFile`" -Root `"$Root`""
-  $watcherProcess = Start-Process -FilePath "powershell.exe" -ArgumentList $watcherArgs -WorkingDirectory $Root -PassThru -WindowStyle Hidden
+  $watcherProcessId = Start-DetachedWatcher
 
   Write-Host ""
   Write-Host "Prop rotation tool is starting..."
@@ -246,8 +276,8 @@ try {
     Stop-ProcessTree -ProcessId $item.Process.Id
   }
   Stop-RootProcesses
-  if ($watcherProcess -and !$watcherProcess.HasExited) {
-    Stop-Process -Id $watcherProcess.Id -Force -ErrorAction SilentlyContinue
+  if ($watcherProcessId) {
+    Stop-Process -Id $watcherProcessId -Force -ErrorAction SilentlyContinue
   }
   Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
   if ($jobHandle -and $jobHandle -ne [IntPtr]::Zero) {
