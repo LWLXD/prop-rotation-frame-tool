@@ -39,6 +39,7 @@ const ui = {
   submitting: "\u63d0\u4ea4\u4e2d",
   generateVideo: "\u751f\u6210\u89c6\u9891",
   chooseImage: "\u8bf7\u9009\u62e9\u56fe\u7247",
+  durationRange: "\u0053\u0065\u0065\u0064\u0061\u006e\u0063\u0065\u0020\u0032\u002e\u0030\u0020\u652f\u6301\u7684\u65f6\u957f\u4e3a\u0020\u0034\u007e\u0031\u0035\u0020\u79d2",
   referenceVideo: "\u53c2\u8003\u89c6\u9891\uff08\u53ef\u9009\uff0c\u4ec5\u4e0a\u4f20 OSS \u4e34\u65f6 URL\uff09",
   noReferenceVideo: "\u672a\u9009\u62e9\u53c2\u8003\u89c6\u9891",
   threeViewTitle: "\u4e09\u89c6\u56fe\u53c2\u8003\uff08\u53ef\u9009\uff09",
@@ -239,6 +240,10 @@ export function App() {
       setError(ui.chooseImage);
       return;
     }
+    if (form.duration < 4 || form.duration > 15) {
+      setError(ui.durationRange);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -371,7 +376,7 @@ export function App() {
           <div className="fieldGrid">
             <label>
               <span>{ui.duration}</span>
-              <input type="number" min="1" max="15" value={form.duration} onChange={(event) => updateNumber("duration", event.target.value)} />
+              <input type="number" min={4} max={15} step={1} value={form.duration} onChange={(event) => updateNumber("duration", event.target.value)} />
             </label>
             <label>
               <span>{ui.fps}</span>

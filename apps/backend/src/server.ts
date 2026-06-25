@@ -33,6 +33,41 @@ const referenceImageFields: Array<{ field: string; role: ReferenceImageRole; fil
   { field: "referenceBackImage", role: "back", fileName: "reference-back.png", sortOrder: 3 }
 ];
 
+const SEEDANCE_DURATION_MESSAGE = "\u0053\u0065\u0065\u0064\u0061\u006e\u0063\u0065\u0020\u0032\u002e\u0030\u0020\u65f6\u957f\u5fc5\u987b\u4e3a\u0020\u0034\u007e\u0031\u0035\u0020\u79d2";
+
+const MAIN_IMAGE_ANCHOR_PROMPT = [
+  "Use the main input image as the first frame of the video and as the highest-priority appearance anchor for the entire video.",
+  "Preserve the same object identity, color, material, surface highlights, rounded edges, thickness, proportions, and overall visual style from the main image.",
+  "The result should look like the exact same object from the main image rotating in place, not a newly redesigned similar object.",
+  "Do not noticeably change the material, color, glossiness, bevels, shape proportions, or surface look."
+].join(" ");
+
+const HORIZONTAL_360_PROMPT = [
+  "Generate a horizontal 360-degree turntable rotation video of the same single prop.",
+  "The prop must remain upright throughout the whole video.",
+  "Only rotate the prop around its own vertical center axis, like a product placed on a turntable.",
+  "The camera must stay fixed, facing the center of the prop.",
+  "Keep the prop centered, stable, and visually consistent.",
+  "Do not tilt, pitch, roll, tumble, flip, orbit the camera, change the viewing height, or rotate around the X axis or Z axis.",
+  "Avoid shape deformation, material drifting, color shifting, and unstable highlights."
+].join(" ");
+
+const VERTICAL_360_PROMPT = [
+  "Generate a vertical 360-degree rotation video of the same single prop.",
+  "The prop stays centered while rotating around its own horizontal center axis.",
+  "The camera remains fixed and the framing stays stable.",
+  "Do not add diagonal tumbling, off-axis motion, chaotic flipping, or camera orbit.",
+  "Preserve the same appearance, material, color, highlights, and proportions from the main image."
+].join(" ");
+
+const TURNTABLE_PROMPT = [
+  "Generate a clean product showcase video of the same single prop on a stable turntable.",
+  "Keep the prop centered, upright, stable, and visually consistent.",
+  "Use smooth controlled rotation with stable lighting and a fixed camera.",
+  "Preserve the original material, color, surface highlights, rounded edges, thickness, and proportions from the main image.",
+  "Do not distort the prop, redesign it, or introduce chaotic motion."
+].join(" ");
+
 async function normalizeImageUpload(file: Express.Multer.File): Promise<Buffer> {
   try {
     return await sharp(file.buffer, { animated: false })
@@ -52,23 +87,45 @@ function isVideoUpload(file: Express.Multer.File): boolean {
   return file.mimetype.startsWith("video/");
 }
 
-function buildPromptWithReferenceViews(prompt: string, referenceImages: TaskReferenceImage[]): string {
-  if (referenceImages.length === 0) {
-    return prompt;
+function buildRotationDirective(rotationMode: RotationMode): string {
+  switch (rotationMode) {
+    case "horizontal_360":
+      return HORIZONTAL_360_PROMPT;
+    case "vertical_360":
+      return VERTICAL_360_PROMPT;
+    case "turntable":
+    default:
+      return TURNTABLE_PROMPT;
   }
+}
+
+function buildReferenceViewPrompt(referenceImages: TaskReferenceImage[]): string {
+  if (!referenceImages || referenceImages.length === 0) return "";
   const roles = referenceImages.map((item) => item.role).join(", ");
   return [
-    prompt,
-    "",
-    `Additional reference views are attached: ${roles}. Use these extra images only as structure references for front/side/back silhouette, thickness, side proportion, and rear details. Do not create a split-screen three-view layout in the output video.`
-  ].join("\n");
+    `Additional reference views are provided: ${roles}.`,
+    "Use these extra images only as structural references for silhouette, thickness, side proportions, and rear details.",
+    "They are not keyframes, not middle frames, not an animation sequence, and not first/middle/last frame references.",
+    "Do not interpolate between these views.",
+    "Do not create a split-screen three-view layout.",
+    "The main input image has priority for material, color, glossiness, lighting style, and overall appearance."
+  ].join(" ");
+}
+
+function buildFinalPrompt(userPrompt: string, rotationMode: RotationMode, referenceImages: TaskReferenceImage[]): string {
+  return [
+    MAIN_IMAGE_ANCHOR_PROMPT,
+    buildRotationDirective(rotationMode),
+    userPrompt,
+    buildReferenceViewPrompt(referenceImages)
+  ].filter(Boolean).join("\n\n");
 }
 
 const taskSchema = z.object({
   taskName: z.string().trim().max(80).optional().default(""),
   prompt: z.string().trim().max(4000).default(defaultPrompt),
   rotationMode: z.enum(["horizontal_360", "vertical_360", "turntable"]).default("horizontal_360"),
-  duration: z.coerce.number().int().min(1).max(15).default(4),
+  duration: z.coerce.number().int().min(4, { message: SEEDANCE_DURATION_MESSAGE }).max(15, { message: SEEDANCE_DURATION_MESSAGE }).default(4),
   fps: z.coerce.number().int().min(1).max(60).default(24),
   width: z.coerce.number().int().min(128).max(2048).default(1024),
   height: z.coerce.number().int().min(128).max(2048).default(1024),
@@ -180,7 +237,7 @@ app.post("/api/tasks", upload.fields([
       referenceVideoPath: null,
       referenceVideoUrl: referenceVideoUpload?.url ?? null,
       referenceVideoOssKey: referenceVideoUpload?.key ?? null,
-      prompt: buildPromptWithReferenceViews(params.prompt || defaultPrompt, referenceImages),
+      prompt: buildFinalPrompt(params.prompt || defaultPrompt, params.rotationMode as RotationMode, referenceImages),
       rotationMode: params.rotationMode as RotationMode,
       duration: params.duration,
       fps: params.fps,
@@ -275,8 +332,15 @@ app.post("/api/tasks/:id/retry", async (req, res, next) => {
     }
     const action = task.videoPath ? "extract" : "generate";
     const nextStatus = action === "extract" ? "EXTRACTING_FRAMES" : "QUEUED";
-    await store.update(req.params.id, { status: nextStatus, progress: action === "extract" ? 45 : 0, errorMessage: null, finishedAt: null });
-    await store.addLog(req.params.id, nextStatus, "info", action === "extract" ? "任务已重新进入抽帧队列" : "任务已重新进入视频生成队列");
+    const retryPatch: Partial<Task> = { status: nextStatus, progress: action === "extract" ? 45 : 0, errorMessage: null, finishedAt: null };
+    if (action === "generate" && task.duration < 4) {
+      retryPatch.duration = 4;
+    }
+    await store.update(req.params.id, retryPatch);
+    await store.addLog(req.params.id, nextStatus, "info", action === "extract" ? "Task requeued for frame extraction" : "Task requeued for video generation");
+    if (action === "generate" && task.duration < 4) {
+      await store.addLog(req.params.id, nextStatus, "warn", "Task duration was raised to 4 seconds for Seedance 2.0 compatibility");
+    }
     await queue.enqueue(req.params.id, action);
     res.json({ taskId: req.params.id, status: nextStatus });
   } catch (error) {
