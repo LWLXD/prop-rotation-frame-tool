@@ -11,3 +11,4 @@ storage/previews/
 storage/zips/
 *.log
 *.tsbuildinfo
+.runtime-logs/
