@@ -89,8 +89,10 @@ function Get-LanUrls {
         $_.IPAddress -notlike "127.*" -and
         $_.IPAddress -notlike "169.254.*" -and
         $_.IPAddress -ne "0.0.0.0" -and
-        $_.AddressState -eq "Preferred"
+        $_.AddressState -eq "Preferred" -and
+        $_.InterfaceAlias -notlike "vEthernet*"
       } |
+      Sort-Object @{ Expression = { if ($_.IPAddress -like "10.*") { 0 } elseif ($_.IPAddress -like "192.168.*") { 1 } else { 2 } } }, InterfaceIndex |
       Select-Object -ExpandProperty IPAddress -Unique
   } catch {
     $addresses = @()
@@ -310,7 +312,9 @@ try {
   Write-Host "Prop rotation tool is starting..."
   Write-Host "Local:    http://localhost:$FrontendPort/"
   $lanUrls = @(Get-LanUrls -Port $FrontendPort)
+  $openUrl = "http://localhost:$FrontendPort/"
   if ($lanUrls.Count -gt 0) {
+    $openUrl = $lanUrls[0]
     Write-Host "LAN:"
     foreach ($url in $lanUrls) {
       Write-Host "  $url"
@@ -329,7 +333,7 @@ try {
 
   Start-Sleep -Seconds 3
   if (!$NoBrowser) {
-    Start-Process "http://localhost:$FrontendPort/"
+    Start-Process $openUrl
   }
 
   while ($true) {

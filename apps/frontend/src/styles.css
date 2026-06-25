@@ -31,7 +31,7 @@ a {
 
 .app {
   min-height: 100vh;
-  padding: 18px;
+  padding: 28px 32px;
 }
 
 .topbar {
@@ -39,7 +39,7 @@ a {
   display: flex;
   justify-content: space-between;
   margin: 0 auto 14px;
-  max-width: 1680px;
+  max-width: 1200px;
 }
 
 .topbar h1,
@@ -62,9 +62,9 @@ a {
 .workspace {
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(280px, 360px) minmax(300px, 410px) minmax(460px, 1fr);
+  grid-template-columns: minmax(280px, 340px) minmax(300px, 380px) minmax(440px, 1fr);
   margin: 0 auto;
-  max-width: 1680px;
+  max-width: 1200px;
 }
 
 .panel {
@@ -547,14 +547,14 @@ textarea {
   display: flex;
   gap: 10px;
   margin: 0 auto 14px;
-  max-width: 1680px;
+  max-width: 1200px;
   padding: 10px 12px;
 }
 
 .modeBanner {
   border-radius: 8px;
   margin: 0 auto 14px;
-  max-width: 1680px;
+  max-width: 1200px;
   padding: 10px 12px;
 }
 
