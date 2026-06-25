@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@prop-tool/shared": "file:../shared",
+    "ali-oss": "^6.23.0",
     "archiver": "^7.0.1",
     "bullmq": "^5.58.7"
   },

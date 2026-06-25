@@ -2,7 +2,7 @@
 
 公司内网无账号版工具。核心流程：
 
-上传道具图 -> 创建任务 -> Worker 通过图片 Base64 调用 Seedance/或本地 mock 生成视频 -> 页面预览视频 -> 手动确认抽帧 -> FFmpeg 抽帧 -> rembg 抠图 -> 打包 ZIP -> 页面预览和下载。
+上传道具图 -> 创建任务 -> 参考图片/可选参考视频上传 OSS 临时目录 -> Worker 通过图片 OSS URL 调用 Seedance，或使用本地 mock 生成视频 -> 页面预览视频 -> 手动确认抽帧 -> FFmpeg 抽帧 -> rembg 抠图 -> 打包 ZIP -> 页面预览和下载。
 
 ## 本地启动
 
@@ -16,7 +16,7 @@ npm run dev
 - 前端：http://localhost:5173
 - 后端：http://localhost:4000
 
-默认 `SEEDANCE_MOCK=true`，没有火山方舟 API Key 时会用 FFmpeg 基于上传图片生成一个占位 MP4，并继续完成抽帧、打包流程。
+默认 `SEEDANCE_MOCK=true`，没有火山方舟 API Key 时会用 FFmpeg 基于上传图片生成一个占位 MP4。视频生成完成后，需要在任务详情中手动点击“开始抽帧”，才会继续抽帧、抠图和打包。
 
 ## API 配置位置
 
@@ -26,13 +26,13 @@ npm run dev
 D:\LWL\AI\道具旋转逐帧工具\.env
 ```
 
+`.env` 已加入 `.gitignore`，不会上传到 GitHub。
+
 开始本地测试时可以先保持：
 
 ```env
 SEEDANCE_MOCK=true
 ```
-
-这时不会调用火山方舟。本地 mock 会用上传图片生成占位视频。视频生成完成后，需在任务详情中手动点击“开始抽帧”，才会继续抽帧、抠图、打包。
 
 接入火山方舟 Seedance 时，修改 `.env`：
 
@@ -43,20 +43,39 @@ ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ARK_MODEL_ID=doubao-seedance-2-0-260128
 ```
 
-当前版本不启用 `PUBLIC_BASE_URL`，上传图片会在后端统一转成 PNG，并以 `data:image/png;base64,...` 形式传给 Seedance。`.env` 已加入 `.gitignore`，不会上传到 GitHub。
+当前版本不启用 `PUBLIC_BASE_URL`。Seedance API 模式下，上传图片会在后端统一转成 PNG，上传到 OSS 临时目录，并以 OSS URL 形式传给 Seedance。
 
-## 图片参考
+## OSS 参考素材配置
 
-创建任务时只上传图片，不启用视频参考。当前版本的处理方式：
+只有参考图片和可选参考视频会上传到 OSS；生成视频、抽帧、抠图和 ZIP 不上传 OSS。OSS 操作限制在 `wanglin/` 前缀内，临时上传固定使用 `wanglin/seedance2/temp/`。
+
+```env
+OSS_ENABLED=true
+OSS_REGION=oss-cn-beijing
+OSS_BUCKET=blueultra-ai
+OSS_ENDPOINT=oss-cn-beijing.aliyuncs.com
+OSS_BASE_URL=https://blueultra-ai.oss-cn-beijing.aliyuncs.com
+OSS_ACCESS_KEY_ID=你的 AccessKey ID
+OSS_ACCESS_KEY_SECRET=你的 AccessKey Secret
+OSS_ALLOWED_ROOT_PREFIX=wanglin/
+OSS_TEMP_PREFIX=wanglin/seedance2/temp/
+OSS_TEMP_TTL_HOURS=24
+```
+
+后端启动时会自动清理 `OSS_TEMP_PREFIX` 下超过 `OSS_TEMP_TTL_HOURS` 的临时对象；删除任务时也会同步删除该任务的参考图片和参考视频 OSS 对象。
+
+## 图片和视频参考
+
+创建任务时必须上传参考图片，可以额外上传参考视频。当前版本的处理方式：
 
 - `SEEDANCE_MOCK=true`：不会调用 Seedance，输出视频由上传图片生成 mock 占位视频。
-- `SEEDANCE_MOCK=false`：调用 Seedance，图片以 Base64 data URL 作为 `image_url.url` 输入。
+- `SEEDANCE_MOCK=false`：调用 Seedance，图片以 OSS URL 作为 `image_url.url` 输入。参考视频会上传并保存 URL，但暂未写入 Seedance 请求体的额外字段，避免未确认字段导致 API 失败。
 
 ## 图片格式
 
 前端可以上传常见图片格式。后端会统一转成真正的 `source.png` 再保存和传给后续流程。
 
-建议优先使用：PNG、JPG/JPEG、WebP。后端也会尝试支持 AVIF、TIFF、GIF 等 Sharp 可解码的栅格格式。
+建议优先使用 PNG、JPG/JPEG、WebP。后端也会尝试支持 AVIF、TIFF、GIF 等 Sharp 可解码的栅格格式。
 
 ## 两阶段处理
 

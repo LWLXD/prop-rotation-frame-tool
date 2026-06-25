@@ -51,11 +51,6 @@ async function generateMockVideo(task: Task, videoPath: string): Promise<void> {
   ]);
 }
 
-async function taskSourceImageDataUrl(task: Task): Promise<string> {
-  const image = await fs.readFile(task.sourceImagePath);
-  return `data:image/png;base64,${image.toString("base64")}`;
-}
-
 function withTimeout(seconds: number): AbortSignal {
   const controller = new AbortController();
   setTimeout(() => controller.abort(), seconds * 1000).unref();
@@ -110,12 +105,14 @@ function extractSeedanceStatus(payload: unknown): string {
 }
 
 async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record<string, unknown>> {
-  const sourceImage = await taskSourceImageDataUrl(task);
+  if (!task.sourceImageUrl) {
+    throw new Error("OSS source image URL is required when SEEDANCE_MOCK=false");
+  }
   const body = {
     model: config.ark.modelId,
     content: [
       { type: "text", text: task.prompt },
-      { type: "image_url", image_url: { url: sourceImage } }
+      { type: "image_url", image_url: { url: task.sourceImageUrl } }
     ],
     duration: task.duration,
     ratio: "1:1",

@@ -8,6 +8,18 @@ export type AppConfig = {
   seedanceMock: boolean;
   rembgServiceUrl: string;
   redisUrl?: string;
+  oss: {
+    enabled: boolean;
+    region: string;
+    bucket: string;
+    endpoint: string;
+    baseUrl: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+    allowedRootPrefix: string;
+    tempPrefix: string;
+    tempTtlHours: number;
+  };
   ark: {
     baseUrl: string;
     apiKey?: string;
@@ -76,6 +88,18 @@ export function getConfig(): AppConfig {
     seedanceMock: (process.env.SEEDANCE_MOCK ?? "true") !== "false",
     rembgServiceUrl: process.env.REMBG_SERVICE_URL ?? "http://localhost:8001",
     redisUrl: process.env.REDIS_URL || undefined,
+    oss: {
+      enabled: (process.env.OSS_ENABLED ?? "false") === "true",
+      region: process.env.OSS_REGION ?? "oss-cn-beijing",
+      bucket: process.env.OSS_BUCKET ?? "blueultra-ai",
+      endpoint: process.env.OSS_ENDPOINT ?? "oss-cn-beijing.aliyuncs.com",
+      baseUrl: process.env.OSS_BASE_URL ?? "https://blueultra-ai.oss-cn-beijing.aliyuncs.com",
+      accessKeyId: process.env.OSS_ACCESS_KEY_ID || undefined,
+      accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || undefined,
+      allowedRootPrefix: process.env.OSS_ALLOWED_ROOT_PREFIX ?? "wanglin/",
+      tempPrefix: process.env.OSS_TEMP_PREFIX ?? "wanglin/seedance2/temp/",
+      tempTtlHours: readNumber("OSS_TEMP_TTL_HOURS", 24)
+    },
     ark: {
       baseUrl: process.env.ARK_BASE_URL ?? "https://ark.cn-beijing.volces.com/api/v3",
       apiKey: process.env.ARK_API_KEY || undefined,

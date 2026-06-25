@@ -5,6 +5,11 @@ export type RuntimeConfig = {
   hasArkApiKey: boolean;
   arkBaseUrl: string;
   arkModelId: string;
+  ossEnabled: boolean;
+  ossBucket: string;
+  ossBaseUrl: string;
+  ossTempPrefix: string;
+  ossHasAccessKey: boolean;
 };
 
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";

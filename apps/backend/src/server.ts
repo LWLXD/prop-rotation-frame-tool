@@ -7,7 +7,7 @@ import multer from "multer";
 import sharp from "sharp";
 import { z } from "zod";
 import { defaultPrompt, taskStatuses, type FrameExtractMode, type RotationMode, type Task } from "@prop-tool/shared";
-import { assertInside, createQueueClient, ensureTaskDirs, getConfig, getTaskPaths, TaskStore } from "@prop-tool/core";
+import { assertInside, createOssService, createQueueClient, ensureTaskDirs, getConfig, getTaskPaths, TaskStore } from "@prop-tool/core";
 
 const config = getConfig();
 const app = express();
@@ -17,6 +17,7 @@ const upload = multer({
 });
 const store = new TaskStore(config.dataRoot);
 const queue = createQueueClient(config.redisUrl);
+const oss = createOssService(config);
 
 async function normalizeImageUpload(file: Express.Multer.File): Promise<Buffer> {
   try {
@@ -27,6 +28,14 @@ async function normalizeImageUpload(file: Express.Multer.File): Promise<Buffer> 
   } catch {
     throw new Error("Uploaded image could not be decoded. Supported raster formats include PNG, JPEG, WebP, AVIF, TIFF, and GIF.");
   }
+}
+
+function filesByField(req: express.Request): Record<string, Express.Multer.File[]> {
+  return (req.files ?? {}) as Record<string, Express.Multer.File[]>;
+}
+
+function isVideoUpload(file: Express.Multer.File): boolean {
+  return file.mimetype.startsWith("video/");
 }
 
 const taskSchema = z.object({
@@ -54,13 +63,23 @@ app.get("/api/runtime-config", (_req, res) => {
     seedanceMock: config.seedanceMock,
     hasArkApiKey: Boolean(config.ark.apiKey),
     arkBaseUrl: config.ark.baseUrl,
-    arkModelId: config.ark.modelId
+    arkModelId: config.ark.modelId,
+    ossEnabled: oss.enabled,
+    ossBucket: oss.bucket,
+    ossBaseUrl: oss.baseUrl,
+    ossTempPrefix: oss.tempPrefix,
+    ossHasAccessKey: oss.hasCredentials
   });
 });
 
-app.post("/api/tasks", upload.single("image"), async (req, res, next) => {
+app.post("/api/tasks", upload.fields([
+  { name: "image", maxCount: 1 },
+  { name: "referenceVideo", maxCount: 1 }
+]), async (req, res, next) => {
   try {
-    const imageFile = req.file;
+    const uploaded = filesByField(req);
+    const imageFile = uploaded.image?.[0];
+    const referenceVideoFile = uploaded.referenceVideo?.[0];
 
     if (!imageFile) {
       res.status(400).json({ message: "image is required" });
@@ -68,6 +87,10 @@ app.post("/api/tasks", upload.single("image"), async (req, res, next) => {
     }
     if (!imageFile.mimetype.startsWith("image/")) {
       res.status(400).json({ message: "Only image uploads are supported" });
+      return;
+    }
+    if (referenceVideoFile && !isVideoUpload(referenceVideoFile)) {
+      res.status(400).json({ message: "referenceVideo must be a video file" });
       return;
     }
 
@@ -78,12 +101,29 @@ app.post("/api/tasks", upload.single("image"), async (req, res, next) => {
     const paths = getTaskPaths(config.storageRoot, taskId);
     await ensureTaskDirs(paths);
     await fs.writeFile(paths.sourceImage, sourcePng);
+    const sourceUpload = oss.enabled
+      ? await oss.uploadTempObject(taskId, "source-image", "source.png", sourcePng, "image/png")
+      : null;
+    const referenceVideoUpload = oss.enabled && referenceVideoFile
+      ? await oss.uploadTempObject(
+        taskId,
+        "reference-video",
+        referenceVideoFile.originalname || "reference-video.mp4",
+        referenceVideoFile.buffer,
+        referenceVideoFile.mimetype || "application/octet-stream"
+      )
+      : null;
 
     const now = new Date().toISOString();
     const task: Task = {
       id: taskId,
       name: taskName,
       sourceImagePath: paths.sourceImage,
+      sourceImageUrl: sourceUpload?.url ?? null,
+      sourceImageOssKey: sourceUpload?.key ?? null,
+      referenceVideoPath: null,
+      referenceVideoUrl: referenceVideoUpload?.url ?? null,
+      referenceVideoOssKey: referenceVideoUpload?.key ?? null,
       prompt: params.prompt || defaultPrompt,
       rotationMode: params.rotationMode as RotationMode,
       duration: params.duration,
@@ -114,6 +154,9 @@ app.post("/api/tasks", upload.single("image"), async (req, res, next) => {
       fileSize: sourcePng.length,
       sortOrder: 0
     });
+    if (referenceVideoUpload) {
+      await store.addLog(taskId, "QUEUED", "info", "参考视频已上传至 OSS 临时目录", { ossKey: referenceVideoUpload.key });
+    }
     await store.addLog(taskId, "QUEUED", "info", "任务已创建并进入队列");
     await queue.enqueue(taskId);
 
@@ -220,6 +263,10 @@ app.delete("/api/tasks/:id", async (req, res, next) => {
         force: true
       });
     }
+    await Promise.all([
+      oss.deleteObject(task.sourceImageOssKey),
+      oss.deleteObject(task.referenceVideoOssKey)
+    ]);
     await store.remove(taskId);
     res.status(204).send();
   } catch (error) {
@@ -343,4 +390,17 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 app.listen(config.port, () => {
   console.log(`Backend API listening on http://localhost:${config.port}`);
+  if (oss.enabled) {
+    const cleanup = () => oss.cleanupTempObjectsOlderThan()
+      .then((removed) => {
+        if (removed > 0) {
+          console.log(`OSS temp cleanup removed ${removed} object(s) from ${oss.tempPrefix}`);
+        }
+      })
+      .catch((error: unknown) => {
+        console.warn("OSS temp cleanup failed", error instanceof Error ? error.message : String(error));
+      });
+    void cleanup();
+    setInterval(cleanup, 60 * 60 * 1000).unref();
+  }
 });

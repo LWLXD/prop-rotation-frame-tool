@@ -207,7 +207,10 @@ textarea {
 }
 
 .fileField small {
+  align-items: center;
   color: #607082;
+  display: flex;
+  gap: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

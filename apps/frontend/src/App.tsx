@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Images, RefreshCw, RotateCw, Trash2, Upload, XCircle } from "lucide-react";
+import { Download, FileVideo, Images, RefreshCw, RotateCw, Trash2, Upload, XCircle } from "lucide-react";
 import { defaultPrompt, type Task, type TaskStatus } from "@prop-tool/shared";
 import {
   cancelTask,
@@ -55,6 +55,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [referenceVideoFile, setReferenceVideoFile] = useState<File | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -126,6 +127,10 @@ export function App() {
     setLocalPreview(nextFile ? URL.createObjectURL(nextFile) : null);
   }
 
+  function handleReferenceVideoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    setReferenceVideoFile(event.target.files?.[0] ?? null);
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file) {
@@ -137,6 +142,9 @@ export function App() {
     try {
       const data = new FormData();
       data.append("image", file);
+      if (referenceVideoFile) {
+        data.append("referenceVideo", referenceVideoFile);
+      }
       for (const [key, value] of Object.entries(form)) {
         data.append(key, String(value));
       }
@@ -178,6 +186,9 @@ export function App() {
             ? "当前为本地模拟模式：不会调用 Seedance，生成的视频是静态占位视频。"
             : `当前为 Seedance API 模式：${runtimeConfig.arkModelId}`}
           {!runtimeConfig.seedanceMock && !runtimeConfig.hasArkApiKey && " 缺少 ARK_API_KEY。"}
+          {!runtimeConfig.seedanceMock && !runtimeConfig.ossEnabled && " OSS 未启用，参考图片无法提供公网 URL。"}
+          {runtimeConfig.ossEnabled && !runtimeConfig.ossHasAccessKey && " OSS 缺少 AccessKey。"}
+          {runtimeConfig.ossEnabled && ` OSS 临时目录：${runtimeConfig.ossTempPrefix}`}
         </div>
       )}
 
@@ -202,6 +213,15 @@ export function App() {
           <label className="dropzone">
             {localPreview ? <img src={localPreview} alt="" /> : <Upload size={32} />}
             <input accept="image/*" type="file" onChange={handleFileChange} />
+          </label>
+
+          <label className="fileField">
+            <span>参考视频（可选，仅上传 OSS 临时 URL）</span>
+            <input accept="video/*" type="file" onChange={handleReferenceVideoChange} />
+            <small>
+              <FileVideo size={14} />
+              {referenceVideoFile ? referenceVideoFile.name : "未选择参考视频"}
+            </small>
           </label>
 
           <label>
