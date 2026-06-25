@@ -128,12 +128,16 @@ async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record
   }
   const referenceImageContent = (task.referenceImages ?? [])
     .filter((item) => Boolean(item.url))
-    .map((item) => ({ type: "image_url", image_url: { url: item.url as string } }));
+    .map((item) => ({
+      type: "image_url",
+      image_url: { url: item.url as string },
+      role: "reference_image"
+    }));
   const body = {
     model: config.ark.modelId,
     content: [
       { type: "text", text: task.prompt },
-      { type: "image_url", image_url: { url: task.sourceImageUrl } },
+      { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "reference_image" },
       ...referenceImageContent
     ],
     duration: task.duration,
