@@ -12,7 +12,17 @@ export type RuntimeConfig = {
   ossHasAccessKey: boolean;
 };
 
-export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
+function resolveApiBaseUrl(): string {
+  const configured = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (configured && configured !== "auto") {
+    return configured.replace(/\/$/, "");
+  }
+
+  const apiPort = (import.meta.env.VITE_API_PORT as string | undefined) ?? "4100";
+  return `${window.location.protocol}//${window.location.hostname}:${apiPort}`;
+}
+
+export const apiBaseUrl = resolveApiBaseUrl();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, options);

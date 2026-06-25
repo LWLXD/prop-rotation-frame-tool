@@ -1,71 +1,96 @@
-# 欧卡道具旋转视频与关键帧抠图网页工具
+# Prop Rotation Frame Tool
 
-公司内网无账号版工具。核心流程：
+Internal no-login web tool for generating prop rotation videos, extracting frames,
+removing backgrounds, and exporting transparent PNG assets.
 
-上传道具图 -> 创建任务 -> 参考图片/可选参考视频上传 OSS 临时目录 -> Worker 通过图片 OSS URL 调用 Seedance，或使用本地 mock 生成视频 -> 页面预览视频 -> 手动确认抽帧 -> FFmpeg 抽帧 -> rembg 抠图 -> 打包 ZIP -> 页面预览和下载。
+## Recommended Company LAN Startup
 
-## 本地启动
-
-```powershell
-npm install
-npm run dev
-```
-
-默认地址：
-
-- 前端：http://localhost:5173
-- 后端：http://localhost:4000
-
-如果本机其它 Vite 工具占用了 `5173`，建议直接使用项目根目录的启动脚本：
+Run the tool on one host computer inside the company network:
 
 ```powershell
 .\start-tool.bat
 ```
 
-脚本默认使用：
+Default ports:
 
-- 前端：http://localhost:5183
-- 后端：http://localhost:4100
-- rembg 抠图服务：http://localhost:8001
+- Frontend: `http://localhost:5183/`
+- Backend API: `http://localhost:4100/`
+- Local rembg service: `http://localhost:8001/`
 
-首次启动会自动创建 `.venv-rembg` 并安装 rembg 抠图依赖，可能需要等待一段时间。保持脚本窗口打开即可使用工具；按 `Ctrl+C` 或关闭脚本窗口，会自动关闭该脚本启动的 rembg、前端、后端和 worker，不会主动关闭其它项目。需要临时换端口时可以这样启动：
+The startup script prints one or more LAN URLs, for example:
+
+```text
+LAN:
+  http://192.168.1.23:5183/
+```
+
+Other company computers should open the printed LAN URL. The frontend will
+automatically call the backend on the same host with port `4100`, so teammates
+do not need to edit configuration on their machines.
+
+Keep the startup window open while the tool is in use. Press `Ctrl+C` or close
+the window to stop the frontend, backend, worker, and rembg processes started by
+the script.
+
+If a port is occupied, start with custom ports:
 
 ```powershell
 .\start-tool.bat -FrontendPort 5184 -BackendPort 4101 -RembgPort 8002
 ```
 
-默认 `SEEDANCE_MOCK=true`，没有火山方舟 API Key 时会用 FFmpeg 基于上传图片生成一个占位 MP4。视频生成完成后，需要在任务详情中手动点击“开始抽帧”，才会继续抽帧、抠图和打包。
+If other computers cannot open the LAN URL, allow inbound access to the frontend
+and backend ports in Windows Firewall, usually `5183` and `4100`.
 
-## API 配置位置
+## Workflow
 
-后台 API 配置填写在项目根目录：
+1. Upload a reference image and create a task.
+2. The worker generates a video through Seedance, or a local placeholder video
+   when mock mode is enabled.
+3. Preview the generated video in the task detail panel.
+4. Click the extract button to extract frames, remove backgrounds, and package
+   downloads.
+5. Download the video, raw frames, transparent frames, or full ZIP package.
+
+Generated videos, frames, cutouts, and ZIP packages stay on local disk. Only
+reference images and optional reference videos are uploaded to OSS for use as
+reference URLs.
+
+## API Configuration
+
+Runtime configuration is stored in the local `.env` file at the project root:
 
 ```text
-D:\LWL\AI\道具旋转逐帧工具\.env
+<project-root>\.env
 ```
 
-`.env` 已加入 `.gitignore`，不会上传到 GitHub。
+`.env` is ignored by Git and must not be committed.
 
-开始本地测试时可以先保持：
+For local flow testing:
 
 ```env
 SEEDANCE_MOCK=true
 ```
 
-接入火山方舟 Seedance 时，修改 `.env`：
+For Seedance API mode:
 
 ```env
 SEEDANCE_MOCK=false
-ARK_API_KEY=你的火山方舟 API Key
+ARK_API_KEY=your_volcengine_ark_api_key
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ARK_MODEL_ID=doubao-seedance-2-0-260128
 ```
 
-当前版本不启用 `PUBLIC_BASE_URL`。Seedance API 模式下，上传图片会在后端统一转成 PNG，上传到 OSS 临时目录，并以 OSS URL 形式传给 Seedance。
+`PUBLIC_BASE_URL` is not required for the current OSS reference workflow. The
+backend converts uploaded images to PNG, uploads the reference asset to OSS, and
+passes the OSS URL to Seedance.
 
-## OSS 参考素材配置
+## OSS Reference Asset Configuration
 
-只有参考图片和可选参考视频会上传到 OSS；生成视频、抽帧、抠图和 ZIP 不上传 OSS。OSS 操作限制在 `wanglin/` 前缀内，临时上传固定使用 `wanglin/seedance2/temp/`。
+Only reference images and optional reference videos are uploaded to OSS.
+Generated outputs remain local.
+
+All OSS operations are restricted to `wanglin/`, and temporary reference assets
+are stored under `wanglin/seedance2/temp/`.
 
 ```env
 OSS_ENABLED=true
@@ -73,45 +98,46 @@ OSS_REGION=oss-cn-beijing
 OSS_BUCKET=blueultra-ai
 OSS_ENDPOINT=oss-cn-beijing.aliyuncs.com
 OSS_BASE_URL=https://blueultra-ai.oss-cn-beijing.aliyuncs.com
-OSS_ACCESS_KEY_ID=你的 AccessKey ID
-OSS_ACCESS_KEY_SECRET=你的 AccessKey Secret
+OSS_ACCESS_KEY_ID=your_access_key_id
+OSS_ACCESS_KEY_SECRET=your_access_key_secret
 OSS_ALLOWED_ROOT_PREFIX=wanglin/
 OSS_TEMP_PREFIX=wanglin/seedance2/temp/
 OSS_TEMP_TTL_HOURS=24
 ```
 
-后端启动时会自动清理 `OSS_TEMP_PREFIX` 下超过 `OSS_TEMP_TTL_HOURS` 的临时对象；删除任务时也会同步删除该任务的参考图片和参考视频 OSS 对象。
+The backend clears expired temporary OSS objects on startup and deletes a task's
+reference OSS objects when that task is deleted.
 
-## 图片和视频参考
+## Image And Video References
 
-创建任务时必须上传参考图片，可以额外上传参考视频。当前版本的处理方式：
+Reference image upload is required. The frontend accepts common image formats,
+and the backend normalizes them to `source.png` before storage and API use.
 
-- `SEEDANCE_MOCK=true`：不会调用 Seedance，输出视频由上传图片生成 mock 占位视频。
-- `SEEDANCE_MOCK=false`：调用 Seedance，图片以 OSS URL 作为 `image_url.url` 输入。参考视频会上传并保存 URL，但暂未写入 Seedance 请求体的额外字段，避免未确认字段导致 API 失败。
+Recommended image formats: PNG, JPG/JPEG, and WebP. The backend also attempts to
+decode formats supported by Sharp, such as AVIF, TIFF, and GIF.
 
-## 图片格式
+Optional reference video upload is stored as a reference URL, but it is not added
+to the Seedance request body yet. This avoids API failures before the exact
+Seedance video-reference field contract is confirmed.
 
-前端可以上传常见图片格式。后端会统一转成真正的 `source.png` 再保存和传给后续流程。
+## Development
 
-建议优先使用 PNG、JPG/JPEG、WebP。后端也会尝试支持 AVIF、TIFF、GIF 等 Sharp 可解码的栅格格式。
+```powershell
+npm install
+npm run check
+npm run build
+```
 
-## 两阶段处理
+The older `npm run dev` command is still available for development, but company
+LAN testing should use `.\start-tool.bat` because it starts all required services
+on stable ports and cleans them up when the window closes.
 
-任务分为两阶段：
+## Repository Layout
 
-1. 生成视频：创建任务后自动执行，完成后任务停在 `VIDEO_DOWNLOADED`，此时可以预览和下载视频。
-2. 抽帧打包：在任务详情中点击“开始抽帧”后执行，完成后可下载原始帧、透明帧和完整 ZIP。
-
-## GitHub 更新约定
-
-当前版本上传到 GitHub 后，后续新版本默认继续提交并推送到同一个 GitHub 仓库。
-
-## 目录
-
-- `apps/frontend`：React + TypeScript + Vite 前端
-- `apps/backend`：任务 API、上传、预览、下载
-- `apps/worker`：任务队列消费与处理
-- `apps/rembg-service`：FastAPI + rembg 服务骨架
-- `packages/shared`：共享类型和任务状态
-- `storage`：按 `task_id` 组织的文件存储目录
-- `data/tasks.json`：本地开发任务记录
+- `apps/frontend`: React + TypeScript + Vite frontend
+- `apps/backend`: task API, upload, preview, download, and OSS cleanup
+- `apps/worker`: task queue processing
+- `apps/rembg-service`: FastAPI + rembg background removal service
+- `packages/shared`: shared types and defaults
+- `storage`: local task files grouped by task id
+- `data/tasks.json`: local task state

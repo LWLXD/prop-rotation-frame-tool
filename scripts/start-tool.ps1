@@ -79,6 +79,28 @@ function Test-PortInUse {
   }
 }
 
+function Get-LanUrls {
+  param([int]$Port)
+
+  $addresses = @()
+  try {
+    $addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+      Where-Object {
+        $_.IPAddress -notlike "127.*" -and
+        $_.IPAddress -notlike "169.254.*" -and
+        $_.IPAddress -ne "0.0.0.0" -and
+        $_.AddressState -eq "Preferred"
+      } |
+      Select-Object -ExpandProperty IPAddress -Unique
+  } catch {
+    $addresses = @()
+  }
+
+  foreach ($address in $addresses) {
+    "http://${address}:$Port/"
+  }
+}
+
 function Enable-KillOnCloseJob {
   if ("ToolJobNative" -as [type]) {
     return
@@ -266,7 +288,8 @@ if (Test-PortInUse -Port $RembgPort) {
 }
 
 $env:PORT = "$BackendPort"
-$env:VITE_API_BASE_URL = "http://localhost:$BackendPort"
+$env:VITE_API_BASE_URL = "auto"
+$env:VITE_API_PORT = "$BackendPort"
 $env:REMBG_SERVICE_URL = "http://localhost:$RembgPort"
 $env:FORCE_COLOR = "1"
 Ensure-RembgEnvironment
@@ -285,12 +308,22 @@ try {
 
   Write-Host ""
   Write-Host "Prop rotation tool is starting..."
-  Write-Host "Frontend: http://localhost:$FrontendPort/"
-  Write-Host "Backend:  http://localhost:$BackendPort/"
-  Write-Host "rembg:    http://localhost:$RembgPort/"
+  Write-Host "Local:    http://localhost:$FrontendPort/"
+  $lanUrls = @(Get-LanUrls -Port $FrontendPort)
+  if ($lanUrls.Count -gt 0) {
+    Write-Host "LAN:"
+    foreach ($url in $lanUrls) {
+      Write-Host "  $url"
+    }
+  } else {
+    Write-Host "LAN:      No active IPv4 address detected."
+  }
+  Write-Host "Backend:  http://localhost:$BackendPort/  (LAN browsers use the same host with port $BackendPort)"
+  Write-Host "rembg:    http://localhost:$RembgPort/  (local backend only)"
   Write-Host "Logs:     $LogDir"
   Write-Host ""
   Write-Host "Keep this window open while using the tool."
+  Write-Host "For other computers on the company network, open the LAN URL above."
   Write-Host "Press Ctrl+C or close this window to stop rembg, backend, worker, and frontend."
   Write-Host ""
 
