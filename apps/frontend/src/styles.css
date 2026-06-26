@@ -293,6 +293,21 @@ textarea {
   margin-top: 2px;
 }
 
+.subheadRow {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.linkButton {
+  background: transparent;
+  border: 0;
+  color: #2367c7;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+
 .segmented {
   background: #edf2f7;
   border-radius: 7px;

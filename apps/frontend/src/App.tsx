@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
 import { Download, FileVideo, Images, RefreshCw, RotateCw, Trash2, Upload, XCircle } from "lucide-react";
-import { defaultPrompt, type FrameExtractMode, type RotationMode, type Task, type TaskStatus } from "@prop-tool/shared";
+import { defaultPrompt, type FrameExtractMode, type InputControlMode, type RotationMode, type Task, type TaskStatus } from "@prop-tool/shared";
 import {
   cancelTask,
   createTask,
@@ -18,6 +18,7 @@ import type { RuntimeConfig } from "./api";
 type FormState = {
   taskName: string;
   prompt: string;
+  inputControlMode: InputControlMode;
   rotationMode: RotationMode;
   duration: number;
   fps: number;
@@ -40,7 +41,16 @@ const ui = {
   generateVideo: "\u751f\u6210\u89c6\u9891",
   chooseImage: "\u8bf7\u9009\u62e9\u56fe\u7247",
   durationRange: "\u0053\u0065\u0065\u0064\u0061\u006e\u0063\u0065\u0020\u0032\u002e\u0030\u0020\u652f\u6301\u7684\u65f6\u957f\u4e3a\u0020\u0034\u007e\u0031\u0035\u0020\u79d2",
+  inputControlMode: "\u8f93\u5165\u63a7\u5236\u6a21\u5f0f",
+  multiReference: "\u591a\u53c2\u8003\u56fe",
+  keyframeControl: "\u5173\u952e\u5e27\u63a7\u5236",
+  multiReferenceHint: "\u591a\u53c2\u8003\u56fe\u6a21\u5f0f\uff1a\u652f\u6301\u4e3b\u56fe\u3001\u4e09\u89c6\u56fe\u548c\u53c2\u8003\u89c6\u9891\u3002\u9002\u5408\u751f\u6210\u7a33\u5b9a\u7684\u9053\u5177\u6c34\u5e73\u65cb\u8f6c\u89c6\u9891\u3002",
+  keyframeControlHint: "\u5173\u952e\u5e27\u63a7\u5236\u6a21\u5f0f\u4e0d\u80fd\u540c\u65f6\u4f7f\u7528\u4e09\u89c6\u56fe\u548c\u53c2\u8003\u89c6\u9891\u3002\u5f53\u524d\u4e3b\u56fe\u4f5c\u4e3a\u9996\u5e27\u63a7\u5236\u3002",
+  keyframeReferenceConflict: "\u5173\u952e\u5e27\u63a7\u5236\u6a21\u5f0f\u4e0d\u80fd\u540c\u65f6\u4f7f\u7528\u53c2\u8003\u89c6\u9891\u3002\u8bf7\u79fb\u9664\u53c2\u8003\u89c6\u9891\uff0c\u6216\u5207\u6362\u4e3a\u591a\u53c2\u8003\u56fe\u6a21\u5f0f\u3002",
+  keyframeReferenceImageConflict: "\u5173\u952e\u5e27\u63a7\u5236\u6a21\u5f0f\u4e0d\u80fd\u540c\u65f6\u4f7f\u7528\u4e09\u89c6\u56fe\u3002\u8bf7\u79fb\u9664\u4e09\u89c6\u56fe\uff0c\u6216\u5207\u6362\u4e3a\u591a\u53c2\u8003\u56fe\u6a21\u5f0f\u3002",
+  clearReferences: "\u6e05\u9664\u53c2\u8003",
   referenceVideo: "\u53c2\u8003\u89c6\u9891\uff08\u53ef\u9009\uff0c\u4ec5\u4e0a\u4f20 OSS \u4e34\u65f6 URL\uff09",
+  referenceVideoHint: "\u53c2\u8003\u89c6\u9891\u53ea\u7528\u4e8e\u53c2\u8003\u8fd0\u52a8\u8282\u594f\u548c\u955c\u5934\u7a33\u5b9a\u6027\uff0c\u4e0d\u4f1a\u4f5c\u4e3a\u9996\u5c3e\u5e27\u6216\u4e2d\u95f4\u5e27\u3002",
   noReferenceVideo: "\u672a\u9009\u62e9\u53c2\u8003\u89c6\u9891",
   threeViewTitle: "\u4e09\u89c6\u56fe\u53c2\u8003\uff08\u53ef\u9009\uff09",
   threeViewHint: "\u7528\u4e8e\u8865\u5145\u6b63\u9762\u3001\u4fa7\u9762\u3001\u80cc\u9762\u7ed3\u6784\uff0c\u751f\u6210\u65f6\u4f1a\u4e00\u8d77\u4f20\u7ed9 Seedance\u3002",
@@ -147,6 +157,7 @@ export function App() {
     side: null,
     back: null
   });
+  const [referenceInputKey, setReferenceInputKey] = useState(0);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -154,6 +165,7 @@ export function App() {
   const [form, setForm] = useState<FormState>({
     taskName: "",
     prompt: defaultPrompt,
+    inputControlMode: "multi_reference",
     rotationMode: "horizontal_360",
     duration: 4,
     fps: 24,
@@ -170,6 +182,8 @@ export function App() {
   const canDownloadVideo = Boolean(selectedTask?.videoPath);
   const canDownloadAssets = selectedTask?.status === "SUCCESS";
   const canExtract = selectedTask?.status === "VIDEO_DOWNLOADED" && Boolean(selectedTask.videoPath);
+  const hasReferenceImages = Object.values(referenceImages).some(Boolean);
+  const hasReferenceMedia = hasReferenceImages || Boolean(referenceVideoFile);
 
   const firstFrames = useMemo(() => {
     const raw = Array.from({ length: Math.min(8, rawFrameCount) }, (_, index) => index + 1);
@@ -234,6 +248,25 @@ export function App() {
     setReferenceVideoFile(event.target.files?.[0] ?? null);
   }
 
+  function clearReferenceMedia() {
+    for (const preview of Object.values(referencePreviews)) {
+      if (preview) URL.revokeObjectURL(preview);
+    }
+    setReferenceImages({ front: null, side: null, back: null });
+    setReferencePreviews({ front: null, side: null, back: null });
+    setReferenceVideoFile(null);
+    setReferenceInputKey((current) => current + 1);
+  }
+
+  function handleInputControlModeChange(mode: InputControlMode) {
+    if (mode === "keyframe_control" && hasReferenceMedia) {
+      setError(referenceVideoFile ? ui.keyframeReferenceConflict : ui.keyframeReferenceImageConflict);
+      return;
+    }
+    setError(null);
+    setForm((current) => ({ ...current, inputControlMode: mode }));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file) {
@@ -249,12 +282,18 @@ export function App() {
     try {
       const data = new FormData();
       data.append("image", file);
-      if (referenceVideoFile) {
+      if (form.inputControlMode === "keyframe_control" && hasReferenceMedia) {
+        setError(referenceVideoFile ? ui.keyframeReferenceConflict : ui.keyframeReferenceImageConflict);
+        return;
+      }
+      if (form.inputControlMode === "multi_reference" && referenceVideoFile) {
         data.append("referenceVideo", referenceVideoFile);
       }
-      for (const item of referenceViewFields) {
-        const referenceFile = referenceImages[item.key];
-        if (referenceFile) data.append(item.field, referenceFile);
+      if (form.inputControlMode === "multi_reference") {
+        for (const item of referenceViewFields) {
+          const referenceFile = referenceImages[item.key];
+          if (referenceFile) data.append(item.field, referenceFile);
+        }
       }
       for (const [key, value] of Object.entries(form)) {
         data.append(key, key === "taskName" ? String(value).trim() || defaultTaskName() : String(value));
@@ -324,33 +363,64 @@ export function App() {
             <input accept="image/*" type="file" onChange={handleFileChange} />
           </label>
 
-          <div className="subhead">{ui.threeViewTitle}</div>
-          <small className="hintText">{ui.threeViewHint}</small>
-          <div className="referenceGrid">
-            {referenceViewFields.map((item) => (
-              <label className="referenceDropzone" key={item.key}>
-                {referencePreviews[item.key] ? (
-                  <img src={referencePreviews[item.key] ?? ""} alt="" />
-                ) : (
-                  <span>
-                    <Upload size={18} />
-                    {item.label}
-                  </span>
-                )}
-                <input accept="image/*" type="file" onChange={(event) => handleReferenceImageChange(item.key, event)} />
-                <small>{referenceImages[item.key]?.name ?? ui.clickUpload}</small>
-              </label>
-            ))}
+          <div className="subhead">{ui.inputControlMode}</div>
+          <div className="segmented">
+            <button
+              type="button"
+              className={form.inputControlMode === "multi_reference" ? "selected" : ""}
+              onClick={() => handleInputControlModeChange("multi_reference")}
+            >
+              {ui.multiReference}
+            </button>
+            <button
+              type="button"
+              className={form.inputControlMode === "keyframe_control" ? "selected" : ""}
+              onClick={() => handleInputControlModeChange("keyframe_control")}
+            >
+              {ui.keyframeControl}
+            </button>
           </div>
+          <small className="hintText">{form.inputControlMode === "multi_reference" ? ui.multiReferenceHint : ui.keyframeControlHint}</small>
 
-          <label className="fileField">
-            <span>{ui.referenceVideo}</span>
-            <input accept="video/*" type="file" onChange={handleReferenceVideoChange} />
-            <small>
-              <FileVideo size={14} />
-              {referenceVideoFile ? referenceVideoFile.name : ui.noReferenceVideo}
-            </small>
-          </label>
+          {form.inputControlMode === "multi_reference" && (
+            <>
+              <div className="subheadRow">
+                <div className="subhead">{ui.threeViewTitle}</div>
+                {hasReferenceMedia && (
+                  <button className="linkButton" type="button" onClick={clearReferenceMedia}>
+                    {ui.clearReferences}
+                  </button>
+                )}
+              </div>
+              <small className="hintText">{ui.threeViewHint}</small>
+              <div className="referenceGrid">
+                {referenceViewFields.map((item) => (
+                  <label className="referenceDropzone" key={item.key}>
+                    {referencePreviews[item.key] ? (
+                      <img src={referencePreviews[item.key] ?? ""} alt="" />
+                    ) : (
+                      <span>
+                        <Upload size={18} />
+                        {item.label}
+                      </span>
+                    )}
+                    <input key={`${referenceInputKey}-${item.key}`} accept="image/*" type="file" onChange={(event) => handleReferenceImageChange(item.key, event)} />
+                    <small>{referenceImages[item.key]?.name ?? ui.clickUpload}</small>
+                  </label>
+                ))}
+              </div>
+
+              <label className="fileField">
+                <span>{ui.referenceVideo}</span>
+                <input key={`video-${referenceInputKey}`} accept="video/*" type="file" onChange={handleReferenceVideoChange} />
+                <small>
+                  <FileVideo size={14} />
+                  {referenceVideoFile ? referenceVideoFile.name : ui.noReferenceVideo}
+                </small>
+                <small className="hintText">{ui.referenceVideoHint}</small>
+              </label>
+            </>
+          )}
 
           <label>
             <span>{ui.taskName}</span>

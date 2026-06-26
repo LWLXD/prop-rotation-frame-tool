@@ -31,6 +31,8 @@ export type OutputType =
 
 export type RotationMode = "horizontal_360" | "vertical_360" | "turntable";
 
+export type InputControlMode = "multi_reference" | "keyframe_control";
+
 export type FrameExtractMode = "interval" | "total_count";
 
 export type ReferenceImageRole = "front" | "side" | "back";
@@ -46,6 +48,7 @@ export type TaskReferenceImage = {
 export type TaskParams = {
   taskName: string;
   prompt: string;
+  inputControlMode: InputControlMode;
   rotationMode: RotationMode;
   duration: number;
   fps: number;
@@ -88,6 +91,7 @@ export type Task = {
   referenceVideoUrl?: string | null;
   referenceVideoOssKey?: string | null;
   prompt: string;
+  inputControlMode: InputControlMode;
   rotationMode: RotationMode;
   duration: number;
   fps: number;

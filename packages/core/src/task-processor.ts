@@ -126,6 +126,10 @@ async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record
   if (!task.sourceImageUrl) {
     throw new Error("OSS source image URL is required when SEEDANCE_MOCK=false");
   }
+  const inputControlMode = task.inputControlMode ?? "multi_reference";
+  if (inputControlMode === "keyframe_control" && ((task.referenceImages ?? []).length > 0 || task.referenceVideoUrl)) {
+    throw new Error("关键帧控制模式不能同时使用三视图或参考视频");
+  }
   const referenceImageContent = (task.referenceImages ?? [])
     .filter((item) => Boolean(item.url))
     .map((item) => ({
@@ -133,13 +137,20 @@ async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record
       image_url: { url: item.url as string },
       role: "reference_image"
     }));
+  const content = inputControlMode === "keyframe_control"
+    ? [
+      { type: "text", text: task.prompt },
+      { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "first_frame" }
+    ]
+    : [
+      { type: "text", text: task.prompt },
+      { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "reference_image" },
+      ...referenceImageContent,
+      ...(task.referenceVideoUrl ? [{ type: "video_url", video_url: { url: task.referenceVideoUrl } }] : [])
+    ];
   const body = {
     model: config.ark.modelId,
-    content: [
-      { type: "text", text: task.prompt },
-      { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "first_frame" },
-      ...referenceImageContent
-    ],
+    content,
     duration: task.duration,
     ratio: "1:1",
     resolution: task.width >= 1024 || task.height >= 1024 ? "1080p" : "720p",
@@ -182,11 +193,14 @@ async function downloadVideo(url: string, outputPath: string, config: AppConfig)
 
 async function generateSeedanceVideo(task: Task, config: AppConfig, store: TaskStore, outputPath: string): Promise<void> {
   const referenceRoles = (task.referenceImages ?? []).filter((item) => Boolean(item.url)).map((item) => item.role);
+  const inputControlMode = task.inputControlMode ?? "multi_reference";
   await store.addLog(
     task.id,
     "GENERATING_VIDEO",
     "info",
-    `Seedance image roles: main=first_frame${referenceRoles.length > 0 ? `, reference_views=${referenceRoles.join(",")}` : ""}`
+    inputControlMode === "keyframe_control"
+      ? "Seedance input mode: keyframe_control, main=first_frame"
+      : `Seedance input mode: multi_reference, main=reference_image${referenceRoles.length > 0 ? `, reference_views=${referenceRoles.join(",")}` : ""}${task.referenceVideoUrl ? ", reference_video=enabled" : ""}`
   );
   const createPayload = await createSeedanceTask(task, config);
   const seedanceTaskId = readStringPath(createPayload, ["id"]) ?? readStringPath(createPayload, ["data", "id"]);

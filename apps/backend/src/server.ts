@@ -10,6 +10,7 @@ import {
   defaultPrompt,
   taskStatuses,
   type FrameExtractMode,
+  type InputControlMode,
   type ReferenceImageRole,
   type RotationMode,
   type Task,
@@ -36,11 +37,16 @@ const referenceImageFields: Array<{ field: string; role: ReferenceImageRole; fil
 const SEEDANCE_DURATION_MESSAGE = "\u0053\u0065\u0065\u0064\u0061\u006e\u0063\u0065\u0020\u0032\u002e\u0030\u0020\u65f6\u957f\u5fc5\u987b\u4e3a\u0020\u0034\u007e\u0031\u0035\u0020\u79d2";
 
 const MAIN_IMAGE_ANCHOR_PROMPT = [
-  "Use the main input image as the first frame of the video and as the highest-priority appearance anchor for the entire video.",
+  "Use the main input image as the highest-priority appearance anchor for the entire video.",
   "Preserve the same object identity, color, material, surface highlights, rounded edges, thickness, proportions, and overall visual style from the main image.",
   "Preserve the stylized 3D game prop icon look from the main image. Do not make the object photorealistic, cinematic, physically realistic, or materially more complex than the main image.",
   "The result should look like the exact same object from the main image rotating in place, not a newly redesigned similar object.",
   "Do not noticeably change the material, color, glossiness, bevels, shape proportions, or surface look."
+].join(" ");
+
+const KEYFRAME_MAIN_IMAGE_PROMPT = [
+  "Use the main input image as the first frame of the video and as the highest-priority appearance anchor for the entire video.",
+  "The first frame should preserve the main image appearance as closely as possible before the controlled rotation begins."
 ].join(" ");
 
 const HORIZONTAL_360_PROMPT = [
@@ -67,6 +73,13 @@ const TURNTABLE_PROMPT = [
   "Use smooth controlled rotation with stable lighting and a fixed camera.",
   "Preserve the original material, color, surface highlights, rounded edges, thickness, and proportions from the main image.",
   "Do not distort the prop, redesign it, or introduce chaotic motion."
+].join(" ");
+
+const REFERENCE_VIDEO_PROMPT = [
+  "If a reference video is provided, use it only as a motion reference for rotation rhythm, pacing, camera stability, and product showcase style.",
+  "Do not copy the subject, material, color, background, or object identity from the reference video.",
+  "The main input image remains the highest-priority appearance anchor.",
+  "The reference video is not a keyframe sequence and should not override the main image appearance."
 ].join(" ");
 
 async function normalizeImageUpload(file: Express.Multer.File): Promise<Buffer> {
@@ -114,18 +127,30 @@ function buildReferenceViewPrompt(referenceImages: TaskReferenceImage[]): string
   ].join(" ");
 }
 
-function buildFinalPrompt(userPrompt: string, rotationMode: RotationMode, referenceImages: TaskReferenceImage[]): string {
+function buildReferenceVideoPrompt(hasReferenceVideo: boolean): string {
+  return hasReferenceVideo ? REFERENCE_VIDEO_PROMPT : "";
+}
+
+function buildFinalPrompt(
+  userPrompt: string,
+  rotationMode: RotationMode,
+  referenceImages: TaskReferenceImage[],
+  inputControlMode: InputControlMode,
+  hasReferenceVideo: boolean
+): string {
   return [
-    MAIN_IMAGE_ANCHOR_PROMPT,
+    inputControlMode === "keyframe_control" ? `${KEYFRAME_MAIN_IMAGE_PROMPT} ${MAIN_IMAGE_ANCHOR_PROMPT}` : MAIN_IMAGE_ANCHOR_PROMPT,
     buildRotationDirective(rotationMode),
     userPrompt,
-    buildReferenceViewPrompt(referenceImages)
+    inputControlMode === "multi_reference" ? buildReferenceViewPrompt(referenceImages) : "",
+    inputControlMode === "multi_reference" ? buildReferenceVideoPrompt(hasReferenceVideo) : ""
   ].filter(Boolean).join("\n\n");
 }
 
 const taskSchema = z.object({
   taskName: z.string().trim().max(80).optional().default(""),
   prompt: z.string().trim().max(4000).default(defaultPrompt),
+  inputControlMode: z.enum(["multi_reference", "keyframe_control"]).default("multi_reference"),
   rotationMode: z.enum(["horizontal_360", "vertical_360", "turntable"]).default("horizontal_360"),
   duration: z.coerce.number().int().min(4, { message: SEEDANCE_DURATION_MESSAGE }).max(15, { message: SEEDANCE_DURATION_MESSAGE }).default(4),
   fps: z.coerce.number().int().min(1).max(60).default(24),
@@ -193,6 +218,10 @@ app.post("/api/tasks", upload.fields([
     }
 
     const params = taskSchema.parse(req.body);
+    if (params.inputControlMode === "keyframe_control" && (referenceImageFiles.length > 0 || referenceVideoFile)) {
+      res.status(400).json({ message: "关键帧控制模式不能同时使用三视图或参考视频" });
+      return;
+    }
     const taskId = randomUUID();
     const taskName = params.taskName || `任务-${taskId.slice(0, 8)}`;
     const sourcePng = await normalizeImageUpload(imageFile);
@@ -239,7 +268,14 @@ app.post("/api/tasks", upload.fields([
       referenceVideoPath: null,
       referenceVideoUrl: referenceVideoUpload?.url ?? null,
       referenceVideoOssKey: referenceVideoUpload?.key ?? null,
-      prompt: buildFinalPrompt(params.prompt || defaultPrompt, params.rotationMode as RotationMode, referenceImages),
+      prompt: buildFinalPrompt(
+        params.prompt || defaultPrompt,
+        params.rotationMode as RotationMode,
+        referenceImages,
+        params.inputControlMode as InputControlMode,
+        Boolean(referenceVideoUpload)
+      ),
+      inputControlMode: params.inputControlMode as InputControlMode,
       rotationMode: params.rotationMode as RotationMode,
       duration: params.duration,
       fps: params.fps,
