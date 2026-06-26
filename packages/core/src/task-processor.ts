@@ -137,7 +137,7 @@ async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record
     model: config.ark.modelId,
     content: [
       { type: "text", text: task.prompt },
-      { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "reference_image" },
+      { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "first_frame" },
       ...referenceImageContent
     ],
     duration: task.duration,
@@ -181,6 +181,13 @@ async function downloadVideo(url: string, outputPath: string, config: AppConfig)
 }
 
 async function generateSeedanceVideo(task: Task, config: AppConfig, store: TaskStore, outputPath: string): Promise<void> {
+  const referenceRoles = (task.referenceImages ?? []).filter((item) => Boolean(item.url)).map((item) => item.role);
+  await store.addLog(
+    task.id,
+    "GENERATING_VIDEO",
+    "info",
+    `Seedance image roles: main=first_frame${referenceRoles.length > 0 ? `, reference_views=${referenceRoles.join(",")}` : ""}`
+  );
   const createPayload = await createSeedanceTask(task, config);
   const seedanceTaskId = readStringPath(createPayload, ["id"]) ?? readStringPath(createPayload, ["data", "id"]);
   if (!seedanceTaskId) {

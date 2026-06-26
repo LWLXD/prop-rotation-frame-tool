@@ -38,6 +38,7 @@ const SEEDANCE_DURATION_MESSAGE = "\u0053\u0065\u0065\u0064\u0061\u006e\u0063\u0
 const MAIN_IMAGE_ANCHOR_PROMPT = [
   "Use the main input image as the first frame of the video and as the highest-priority appearance anchor for the entire video.",
   "Preserve the same object identity, color, material, surface highlights, rounded edges, thickness, proportions, and overall visual style from the main image.",
+  "Preserve the stylized 3D game prop icon look from the main image. Do not make the object photorealistic, cinematic, physically realistic, or materially more complex than the main image.",
   "The result should look like the exact same object from the main image rotating in place, not a newly redesigned similar object.",
   "Do not noticeably change the material, color, glossiness, bevels, shape proportions, or surface look."
 ].join(" ");
@@ -104,11 +105,12 @@ function buildReferenceViewPrompt(referenceImages: TaskReferenceImage[]): string
   const roles = referenceImages.map((item) => item.role).join(", ");
   return [
     `Additional reference views are provided: ${roles}.`,
-    "Use these extra images only as structural references for silhouette, thickness, side proportions, and rear details.",
+    "Use these extra images only as low-priority structural references for silhouette, thickness, side proportions, and rear details.",
     "They are not keyframes, not middle frames, not an animation sequence, and not first/middle/last frame references.",
     "Do not interpolate between these views.",
     "Do not create a split-screen three-view layout.",
-    "The main input image has priority for material, color, glossiness, lighting style, and overall appearance."
+    "These extra views must not override the main input image.",
+    "The main input image has priority for material, color, glossiness, lighting style, stylization level, and overall appearance."
   ].join(" ");
 }
 

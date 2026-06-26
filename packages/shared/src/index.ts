@@ -118,7 +118,7 @@ export type TaskListResponse = {
 };
 
 export const defaultPrompt =
-  "Keep the same prop appearance as the main image. Preserve the original color, material, rounded bevels, thickness, surface highlights, proportions, and overall style. Use a clean simple background and stable lighting. The video should look like the same object rotating, not a redesigned object.";
+  "Keep the same prop appearance as the main image. Preserve the original color, material, rounded bevels, thickness, surface highlights, proportions, and overall stylized 3D game prop icon style. Use a clean simple background and stable lighting. The video should look like the same object rotating, not a redesigned or photorealistic object.";
 
 export function isTerminalStatus(status: TaskStatus): boolean {
   return status === "SUCCESS" || status === "FAILED" || status === "CANCELLED";
