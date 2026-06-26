@@ -146,7 +146,7 @@ async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record
       { type: "text", text: task.prompt },
       { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "reference_image" },
       ...referenceImageContent,
-      ...(task.referenceVideoUrl ? [{ type: "video_url", video_url: { url: task.referenceVideoUrl } }] : [])
+      ...(task.referenceVideoUrl ? [{ type: "video_url", role: "reference_video", video_url: { url: task.referenceVideoUrl } }] : [])
     ];
   const body = {
     model: config.ark.modelId,
