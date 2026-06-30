@@ -102,7 +102,10 @@ export class TaskStore {
       createdAt: new Date().toISOString(),
       ...output
     };
-    task.outputs = [...task.outputs.filter((item) => item.filePath !== next.filePath), next];
+    task.outputs = [
+      ...task.outputs.filter((item) => item.outputType !== next.outputType || item.filePath !== next.filePath),
+      next
+    ];
     task.updatedAt = new Date().toISOString();
     await this.write(db);
     return next;

@@ -7,6 +7,9 @@
     "dev": "concurrently -n backend,worker,frontend -c cyan,magenta,green \"npm:dev -w apps/backend\" \"npm:dev -w apps/worker\" \"npm:dev -w apps/frontend\"",
     "build": "npm run build --workspaces",
     "check": "npm run check --workspaces --if-present",
+    "typecheck": "npm run check",
+    "lint": "npm run check",
+    "check:text-encoding": "node scripts/check-text-encoding.mjs",
     "start:backend": "npm run start -w apps/backend",
     "start:worker": "npm run start -w apps/worker"
   },

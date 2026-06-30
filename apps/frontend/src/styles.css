@@ -146,6 +146,11 @@ a {
   gap: 8px;
 }
 
+.actions button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
 .dropzone {
   align-items: center;
   aspect-ratio: 1 / 1;
@@ -161,10 +166,33 @@ a {
   width: 100%;
 }
 
+.uploadGroup {
+  display: grid;
+  gap: 10px;
+}
+
 .dropzone input {
   inset: 0;
   opacity: 0;
   position: absolute;
+}
+
+.removeMediaButton {
+  align-items: center;
+  background: rgba(20, 28, 38, 0.72);
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 28px;
+  z-index: 2;
 }
 
 .dropzone img,
@@ -221,7 +249,32 @@ textarea {
   display: block;
   font-size: 12px;
   line-height: 1.45;
-  margin-top: -8px;
+  margin-top: 0;
+}
+
+.referenceVideoState {
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 7px 8px;
+  white-space: normal;
+}
+
+.referenceVideoState.probing,
+.referenceVideoState.selected {
+  background: #eef5ff;
+  color: #23599a;
+}
+
+.referenceVideoState.valid {
+  background: #eaf7ef;
+  color: #28633d;
+}
+
+.referenceVideoState.low,
+.referenceVideoState.failed {
+  background: #fff7e8;
+  color: #805100;
 }
 
 .referenceGrid {
@@ -231,12 +284,14 @@ textarea {
 }
 
 .referenceDropzone {
+  aspect-ratio: 1 / 1;
   background: #f6f8fa;
   border: 1px dashed #aab7c5;
   border-radius: 7px;
   cursor: pointer;
-  display: flex;
+  display: grid;
   gap: 5px;
+  grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   overflow: hidden;
   padding: 7px;
@@ -250,26 +305,102 @@ textarea {
 }
 
 .referenceDropzone img {
-  aspect-ratio: 1 / 1;
+  height: 100%;
+  min-height: 0;
   object-fit: contain;
   width: 100%;
 }
 
 .referenceDropzone span {
   align-items: center;
-  aspect-ratio: 1 / 1;
   color: #607082;
   display: flex;
   flex-direction: column;
   font-size: 12px;
   gap: 5px;
   justify-content: center;
+  min-height: 0;
 }
 
 .referenceDropzone small {
   color: #687584;
   font-size: 11px;
   overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keyframeStack {
+  display: grid;
+  gap: 12px;
+}
+
+.keyframeGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.keyframeDropzone {
+  aspect-ratio: 1 / 1;
+  background: #f6f8fa;
+  border: 1px dashed #aab7c5;
+  border-radius: 7px;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px;
+  position: relative;
+}
+
+.keyframeDropzone input {
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+}
+
+.keyframeDropzone img {
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  width: 100%;
+}
+
+.keyframeDropzone span {
+  align-items: center;
+  color: #607082;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 5px;
+  height: 100%;
+  justify-content: center;
+  min-height: 0;
+  text-align: center;
+  width: 100%;
+}
+
+.keyframeDropzone small {
+  color: #687584;
+  font-size: 11px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.imageNumberBadge {
+  color: #607082;
+  display: block;
+  font-size: 11px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  pointer-events: none;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -284,6 +415,25 @@ textarea {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sizeSummary {
+  background: #f6f8fa;
+  border: 1px solid #e0e6ed;
+  border-radius: 8px;
+  color: #35404c;
+  display: grid;
+  gap: 5px;
+  padding: 9px 10px;
+}
+
+.sizeSummary strong {
+  font-size: 13px;
+}
+
+.sizeSummary small {
+  color: #687584;
+  line-height: 1.45;
 }
 
 .subhead {
@@ -518,6 +668,56 @@ textarea {
   border: 1px solid #dfe5ec;
   border-radius: 7px;
   width: 100%;
+}
+
+.keyframePreviewGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+}
+
+.keyframePreviewGrid figure {
+  margin: 0;
+}
+
+.keyframePreviewGrid img {
+  aspect-ratio: 1 / 1;
+  background: #f6f8fa;
+  border: 1px solid #dfe5ec;
+  border-radius: 7px;
+  object-fit: contain;
+  width: 100%;
+}
+
+.keyframePreviewGrid figcaption {
+  color: #687584;
+  font-size: 11px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extraPromptInfo {
+  background: #f7f9fb;
+  border: 1px solid #e0e6ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 9px 10px;
+}
+
+.extraPromptInfo strong {
+  color: #35404c;
+  font-size: 13px;
+}
+
+.extraPromptInfo span {
+  color: #687584;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .checker img {

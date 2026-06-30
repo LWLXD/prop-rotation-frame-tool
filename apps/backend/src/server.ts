@@ -1,20 +1,26 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import cors from "cors";
 import express from "express";
 import multer from "multer";
 import sharp from "sharp";
 import { z } from "zod";
 import {
-  defaultPrompt,
   taskStatuses,
+  type AspectRatio,
   type FrameExtractMode,
   type InputControlMode,
+  type KeyframeImageRole,
   type ReferenceImageRole,
+  type ResolutionPreset,
   type RotationMode,
   type Task,
-  type TaskReferenceImage
+  type TaskKeyframeImage,
+  type TaskReferenceImage,
+  type VideoMediaMeta
 } from "@prop-tool/shared";
 import { assertInside, createOssService, createQueueClient, ensureTaskDirs, getConfig, getTaskPaths, TaskStore } from "@prop-tool/core";
 
@@ -27,6 +33,10 @@ const upload = multer({
 const store = new TaskStore(config.dataRoot);
 const queue = createQueueClient(config.redisUrl);
 const oss = createOssService(config);
+const execFileAsync = promisify(execFile);
+const MIN_SEEDANCE_PIXEL_COUNT = 409600;
+const UPSCALED_REFERENCE_VIDEO_SIZE = 720;
+const MAX_MIDDLE_KEYFRAMES = 5;
 
 const referenceImageFields: Array<{ field: string; role: ReferenceImageRole; fileName: string; sortOrder: number }> = [
   { field: "referenceFrontImage", role: "front", fileName: "reference-front.png", sortOrder: 1 },
@@ -34,52 +44,81 @@ const referenceImageFields: Array<{ field: string; role: ReferenceImageRole; fil
   { field: "referenceBackImage", role: "back", fileName: "reference-back.png", sortOrder: 3 }
 ];
 
+const keyframeImageFields: Array<{ field: string; role: KeyframeImageRole; fileName: string; sortOrder: number }> = [
+  { field: "finalFrameImage", role: "final", fileName: "keyframe-final.png", sortOrder: 20 }
+];
+
 const SEEDANCE_DURATION_MESSAGE = "\u0053\u0065\u0065\u0064\u0061\u006e\u0063\u0065\u0020\u0032\u002e\u0030\u0020\u65f6\u957f\u5fc5\u987b\u4e3a\u0020\u0034\u007e\u0031\u0035\u0020\u79d2";
 
-const MAIN_IMAGE_ANCHOR_PROMPT = [
-  "Use the main input image as the highest-priority appearance anchor for the entire video.",
-  "Preserve the same object identity, color, material, surface highlights, rounded edges, thickness, proportions, and overall visual style from the main image.",
+const GLOBAL_OBJECT_LOCK_PROMPT = [
+  "Use the main input image as the highest-priority appearance anchor for the object.",
+  "Preserve the same object identity, silhouette, proportions, material, color, highlights, edge thickness, and overall visual style from the main image.",
+  "Preserve a casual Western cartoon mobile game icon style: clean simplified shapes, chunky rounded bevels, saturated friendly colors, soft painted highlights, and a polished toy-like surface.",
+  "Keep the material simple and stylized, like a casual puzzle or match-3 game prop icon, not realistic metal, glass, stone, leather, or physically complex PBR material.",
+  "When inferring unseen sides or the back, continue the same simplified cartoon icon material from the main image instead of adding extra realistic texture, scratches, grime, complex reflections, or heavy specular detail.",
   "Preserve the stylized 3D game prop icon look from the main image. Do not make the object photorealistic, cinematic, physically realistic, or materially more complex than the main image.",
-  "The result should look like the exact same object from the main image rotating in place, not a newly redesigned similar object.",
-  "Do not noticeably change the material, color, glossiness, bevels, shape proportions, or surface look."
+  "The output must look like the exact same object rotating, not a redesigned or newly generated similar object.",
+  "If additional front, side, or back view images are provided, treat them as rough structural sketches only, not as final rendered frames.",
+  "Use those sketches only to infer silhouette, thickness, hidden side/back details, and how the same object should look from other angles.",
+  "These additional views are not keyframes, not middle frames, not final appearance targets, and not an animation sequence.",
+  "The main input image remains the source of truth for final material, color, bevels, highlights, and style.",
+  "If a reference video is provided, use it only as a motion rhythm, pacing, and camera stability reference.",
+  "Do not copy the subject, shape logic, rotation axis, or object identity from the reference video.",
+  "The object's rotation axis must be determined by the main input image, not by the reference video.",
+  "Define the rotation axis from the object's own symmetric true centerline in the main input image, passing through the exact geometric center of the object.",
+  "Keep this centerline fixed in screen space for the entire video."
 ].join(" ");
 
 const KEYFRAME_MAIN_IMAGE_PROMPT = [
-  "Use the main input image as the first frame of the video and as the highest-priority appearance anchor for the entire video.",
-  "The first frame should preserve the main image appearance as closely as possible before the controlled rotation begins."
+  "Use the main input image as the first frame of the video.",
+  "The first frame should preserve the main image appearance as closely as possible before the controlled rotation begins.",
+  "After the first frame, keep the same object locked to its own symmetric true centerline."
 ].join(" ");
 
 const HORIZONTAL_360_PROMPT = [
-  "Generate a horizontal 360-degree turntable rotation video of the same single prop.",
-  "The prop must remain upright throughout the whole video.",
-  "Only rotate the prop around its own vertical center axis, like a product placed on a turntable.",
-  "The camera must stay fixed, facing the center of the prop.",
-  "Keep the prop centered, stable, and visually consistent.",
-  "Do not tilt, pitch, roll, tumble, flip, orbit the camera, change the viewing height, or rotate around the X axis or Z axis.",
-  "Avoid shape deformation, material drifting, color shifting, and unstable highlights."
+  "Rotation mode: one complete horizontal 360-degree turntable rotation at constant speed.",
+  "The object must complete exactly one full 360-degree yaw rotation during the video, no less and no more.",
+  "Use uniform angular velocity: every frame advances the rotation angle by the same amount, with no easing in, easing out, pauses, speed changes, reversals, or rocking motion.",
+  "The animation timeline must follow this angle plan: at 0% show the original main-view angle, at 25% show a true side view, at 50% show the inferred back side, at 75% show the opposite side view, and at 100% return to the original main-view angle.",
+  "The first and final frames must closely match in object angle, pose, scale, lighting, and appearance, forming a seamless looping 360 turntable video.",
+  "Rotate only the object around its own vertical symmetric true centerline, equivalent to the object's local Y axis.",
+  "This vertical axis must pass through the exact visual center of the object from top to bottom, like a skewer through the object's own middle.",
+  "The object must stay upright at all times while turning left-to-right around this fixed vertical axis.",
+  "The center of the object must remain locked in the same screen position with stable scale, stable lighting, and a stable bounding box.",
+  "The camera must remain fixed and face the object's center; the camera must not orbit, pan, tilt, zoom, or change viewing height.",
+  "Do not fake rotation by only moving highlights, stretching the shape, sliding the object, or tilting the front view; the visible faces and silhouette must continuously change as the object turns through side view, back view, side view, and back to the starting view.",
+  "Do not stop at 90 degrees or 180 degrees, do not swing back and forth, and do not jump between a few static angles.",
+  "Do not use the reference video to infer a different axis, diagonal axis, off-center pivot, irregular pacing, or tumbling motion.",
+  "Strictly avoid pitch, roll, diagonal leaning, flipping, somersaulting, end-over-end motion, horizontal-axis rotation, camera orbit, or any 3D space tumble."
 ].join(" ");
 
 const VERTICAL_360_PROMPT = [
-  "Generate a vertical 360-degree rotation video of the same single prop.",
-  "The prop stays centered while rotating around its own horizontal center axis.",
-  "The camera remains fixed and the framing stays stable.",
-  "Do not add diagonal tumbling, off-axis motion, chaotic flipping, or camera orbit.",
-  "Preserve the same appearance, material, color, highlights, and proportions from the main image."
+  "Rotation mode: vertical 360-degree object rotation.",
+  "Rotate the object around the horizontal symmetric true centerline of the object shown in the main input image.",
+  "This axis must pass through the exact visual center of the object from left to right, not through an off-center edge or corner.",
+  "Keep the object centered and rotate it in place around this fixed horizontal centerline only.",
+  "The camera must remain fixed and face the object's center; the camera must not orbit, pan, tilt, zoom, or change viewing height.",
+  "Do not use the reference video to infer a different axis, diagonal axis, off-center pivot, or chaotic flipping style.",
+  "Strictly avoid diagonal tumbling, free-space rolling, camera orbit, drifting pivot points, shape deformation, and unstable scale."
 ].join(" ");
 
 const TURNTABLE_PROMPT = [
-  "Generate a clean product showcase video of the same single prop on a stable turntable.",
-  "Keep the prop centered, upright, stable, and visually consistent.",
-  "Use smooth controlled rotation with stable lighting and a fixed camera.",
-  "Preserve the original material, color, surface highlights, rounded edges, thickness, and proportions from the main image.",
-  "Do not distort the prop, redesign it, or introduce chaotic motion."
+  "Rotation mode: stable product turntable showcase.",
+  "Use a clean, smooth, controlled turntable rotation around the vertical symmetric true centerline of the object shown in the main input image.",
+  "The axis must pass through the object's exact geometric center and remain fixed for the full clip.",
+  "Keep the object upright, centered, and visually stable with no wobble, no diagonal lean, and no off-axis pivot.",
+  "The camera must stay fixed and face the center of the object; only the object rotates.",
+  "Use the reference video, if provided, only for pacing, rhythm, smoothness, and camera stability, never for axis selection or object identity.",
+  "Do not distort, redesign, stretch, melt, roll, tumble, flip, or orbit the object."
 ].join(" ");
 
 const REFERENCE_VIDEO_PROMPT = [
-  "If a reference video is provided, use it only as a motion reference for rotation rhythm, pacing, camera stability, and product showcase style.",
-  "Do not copy the subject, material, color, background, or object identity from the reference video.",
-  "The main input image remains the highest-priority appearance anchor.",
-  "The reference video is not a keyframe sequence and should not override the main image appearance."
+  "Reference video usage rule: use the reference video only for motion timing, pacing, smoothness, and stable product-display feel.",
+  "The reference video must not define the object's rotation axis, pivot point, shape, material, color, identity, or camera path.",
+  "If the reference video does not show a clean full 360-degree constant-speed turntable rotation, ignore its incomplete angle path and still follow the selected rotation-mode instructions.",
+  "For horizontal 360 mode, the generated object must complete the full constant-speed 360-degree yaw rotation even if the reference video only wobbles, pauses, turns partially, or jumps between angles.",
+  "Ignore any diagonal rolling, off-axis turning, tumbling, flipping, camera orbit, or subject-specific movement that appears in the reference video.",
+  "The main input image and the selected rotation-mode instructions have higher priority than the reference video."
 ].join(" ");
 
 async function normalizeImageUpload(file: Express.Multer.File): Promise<Buffer> {
@@ -101,6 +140,58 @@ function isVideoUpload(file: Express.Multer.File): boolean {
   return file.mimetype.startsWith("video/");
 }
 
+function safeReferenceVideoFileName(taskId: string, originalName?: string): string {
+  const extension = path.extname(originalName ?? "").toLowerCase().replace(/[^a-z0-9.]/g, "") || ".mp4";
+  return `reference-video-${taskId}-${Date.now()}${extension}`;
+}
+
+async function probeVideoMeta(filePath: string): Promise<VideoMediaMeta> {
+  const { stdout } = await execFileAsync("ffprobe", [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=width,height,duration:format=duration,format_name",
+    "-of",
+    "json",
+    filePath
+  ], { windowsHide: true, maxBuffer: 1024 * 1024 * 10 });
+  const payload = JSON.parse(stdout) as {
+    streams?: Array<{ width?: number; height?: number; duration?: string }>;
+    format?: { duration?: string; format_name?: string };
+  };
+  const stream = payload.streams?.[0];
+  const width = typeof stream?.width === "number" ? stream.width : undefined;
+  const height = typeof stream?.height === "number" ? stream.height : undefined;
+  const durationText = stream?.duration ?? payload.format?.duration;
+  const duration = durationText ? Number(durationText) : undefined;
+  return {
+    width,
+    height,
+    pixelCount: width && height ? width * height : undefined,
+    duration: Number.isFinite(duration) ? duration : undefined,
+    format: payload.format?.format_name
+  };
+}
+
+async function upscaleReferenceVideo(inputPath: string, outputPath: string): Promise<void> {
+  const size = String(UPSCALED_REFERENCE_VIDEO_SIZE);
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-i",
+    inputPath,
+    "-vf",
+    `scale=${size}:${size}:force_original_aspect_ratio=decrease,pad=${size}:${size}:(ow-iw)/2:(oh-ih)/2`,
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    "-an",
+    outputPath
+  ], { windowsHide: true, maxBuffer: 1024 * 1024 * 10 });
+}
+
 function buildRotationDirective(rotationMode: RotationMode): string {
   switch (rotationMode) {
     case "horizontal_360":
@@ -118,10 +209,13 @@ function buildReferenceViewPrompt(referenceImages: TaskReferenceImage[]): string
   const roles = referenceImages.map((item) => item.role).join(", ");
   return [
     `Additional reference views are provided: ${roles}.`,
-    "Use these extra images only as low-priority structural references for silhouette, thickness, side proportions, and rear details.",
+    "Treat these extra images as rough structure sketches, not as finished rendered frames.",
+    "Use them only to infer the same object's silhouette, thickness, side proportions, and rear details from the main image.",
     "They are not keyframes, not middle frames, not an animation sequence, and not first/middle/last frame references.",
-    "Do not interpolate between these views.",
+    "Do not directly copy their drawing style, roughness, linework, colors, lighting, or low-detail appearance.",
+    "Do not interpolate between these views as if they were animation frames.",
     "Do not create a split-screen three-view layout.",
+    "Do not use these views to change the rotation axis away from the symmetric true centerline defined by the main input image.",
     "These extra views must not override the main input image.",
     "The main input image has priority for material, color, glossiness, lighting style, stylization level, and overall appearance."
   ].join(" ");
@@ -131,34 +225,92 @@ function buildReferenceVideoPrompt(hasReferenceVideo: boolean): string {
   return hasReferenceVideo ? REFERENCE_VIDEO_PROMPT : "";
 }
 
-function buildFinalPrompt(
-  userPrompt: string,
-  rotationMode: RotationMode,
-  referenceImages: TaskReferenceImage[],
-  inputControlMode: InputControlMode,
-  hasReferenceVideo: boolean
-): string {
+function buildKeyframeControlPrompt(keyframeImages: TaskKeyframeImage[]): string {
+  const middleCount = keyframeImages.filter((item) => item.role === "middle").length;
+  const hasFinal = keyframeImages.some((item) => item.role === "final");
   return [
-    inputControlMode === "keyframe_control" ? `${KEYFRAME_MAIN_IMAGE_PROMPT} ${MAIN_IMAGE_ANCHOR_PROMPT}` : MAIN_IMAGE_ANCHOR_PROMPT,
-    buildRotationDirective(rotationMode),
-    userPrompt,
-    inputControlMode === "multi_reference" ? buildReferenceViewPrompt(referenceImages) : "",
-    inputControlMode === "multi_reference" ? buildReferenceVideoPrompt(hasReferenceVideo) : ""
+    KEYFRAME_MAIN_IMAGE_PROMPT,
+    "Keyframe control mode uses the initial frame as the first video frame and appearance anchor.",
+    middleCount > 0
+      ? `There are ${middleCount} middle keyframe reference image(s). Use them in their provided order to guide the intermediate motion and pose progression.`
+      : "",
+    hasFinal
+      ? "A final frame reference image is provided. Use it to guide the ending state while preserving the same object identity and style."
+      : "No final frame is provided. End the motion naturally according to the selected rotation mode while preserving object identity and style.",
+    "Do not treat middle frames as unrelated reference images; use them only as ordered temporal constraints."
+  ].filter(Boolean).join(" ");
+}
+
+function buildReferenceImageNumberPrompt(options: {
+  inputControlMode: InputControlMode;
+  referenceImages: TaskReferenceImage[];
+  keyframeImages: TaskKeyframeImage[];
+}): string {
+  const lines: string[] = [];
+  if (options.inputControlMode === "keyframe_control") {
+    const middleFrames = options.keyframeImages
+      .filter((item) => item.role === "middle")
+      .sort((a, b) => a.index - b.index);
+    const hasInitial = options.keyframeImages.some((item) => item.role === "initial");
+    const finalFrame = options.keyframeImages.find((item) => item.role === "final");
+    if (hasInitial) lines.push("\u56fe1 is the video initial frame reference image.");
+    middleFrames.forEach((_, index) => {
+      lines.push(`\u56fe${index + 2} is middle keyframe reference image ${index + 1}.`);
+    });
+    if (finalFrame) {
+      lines.push(`\u56fe${middleFrames.length + 2} is the video final frame reference image.`);
+    }
+  } else {
+    lines.push("\u56fe1 is the main reference image and highest-priority appearance anchor.");
+    for (const [index, field] of referenceImageFields.entries()) {
+      const image = options.referenceImages.find((item) => item.role === field.role);
+      if (!image) continue;
+      lines.push(`\u56fe${index + 2} is the ${field.role} auxiliary structural reference image.`);
+    }
+  }
+
+  return lines.length > 0
+    ? ["Reference image number mapping for any user mentions such as @\u56fe1 or @\u56fe2:", ...lines].join("\n")
+    : "";
+}
+
+function buildSeedancePrompt(options: {
+  userExtraPrompt?: string;
+  rotationMode: RotationMode;
+  referenceImages: TaskReferenceImage[];
+  keyframeImages: TaskKeyframeImage[];
+  inputControlMode: InputControlMode;
+  hasReferenceVideo: boolean;
+}): string {
+  return [
+    GLOBAL_OBJECT_LOCK_PROMPT,
+    options.inputControlMode === "keyframe_control" ? buildKeyframeControlPrompt(options.keyframeImages) : "",
+    buildRotationDirective(options.rotationMode),
+    options.inputControlMode === "multi_reference" ? buildReferenceViewPrompt(options.referenceImages) : "",
+    options.inputControlMode === "multi_reference" ? buildReferenceVideoPrompt(options.hasReferenceVideo) : "",
+    buildReferenceImageNumberPrompt(options),
+    options.userExtraPrompt?.trim() ? `User extra prompt: ${options.userExtraPrompt.trim()}` : ""
   ].filter(Boolean).join("\n\n");
 }
 
 const taskSchema = z.object({
   taskName: z.string().trim().max(80).optional().default(""),
-  prompt: z.string().trim().max(4000).default(defaultPrompt),
+  userExtraPrompt: z.string().trim().max(4000).optional().default(""),
+  prompt: z.string().trim().max(4000).optional().default(""),
   inputControlMode: z.enum(["multi_reference", "keyframe_control"]).default("multi_reference"),
   rotationMode: z.enum(["horizontal_360", "vertical_360", "turntable"]).default("horizontal_360"),
+  aspectRatio: z.enum(["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]).default("1:1"),
+  resolutionPreset: z.enum(["480p", "720p", "1080p", "4k"]).default("720p"),
   duration: z.coerce.number().int().min(4, { message: SEEDANCE_DURATION_MESSAGE }).max(15, { message: SEEDANCE_DURATION_MESSAGE }).default(4),
   fps: z.coerce.number().int().min(1).max(60).default(24),
-  width: z.coerce.number().int().min(128).max(2048).default(1024),
-  height: z.coerce.number().int().min(128).max(2048).default(1024),
+  width: z.coerce.number().int().min(128).max(8192).default(1024),
+  height: z.coerce.number().int().min(128).max(8192).default(1024),
   frameExtractMode: z.enum(["interval", "total_count"]).default("interval"),
   frameInterval: z.coerce.number().int().min(1).max(120).default(4),
   totalExtractCount: z.coerce.number().int().min(1).max(120).optional()
+}).refine((value) => value.width * value.height >= MIN_SEEDANCE_PIXEL_COUNT, {
+  message: "Seedance 2.0 要求视频总像素数不低于 409600，请选择 720P 或更高规格。",
+  path: ["width"]
 });
 
 app.use(cors());
@@ -187,12 +339,16 @@ app.post("/api/tasks", upload.fields([
   { name: "referenceFrontImage", maxCount: 1 },
   { name: "referenceSideImage", maxCount: 1 },
   { name: "referenceBackImage", maxCount: 1 },
-  { name: "referenceVideo", maxCount: 1 }
+  { name: "referenceVideo", maxCount: 1 },
+  { name: "keyframeMiddleImages", maxCount: MAX_MIDDLE_KEYFRAMES },
+  { name: "finalFrameImage", maxCount: 1 }
 ]), async (req, res, next) => {
   try {
     const uploaded = filesByField(req);
     const imageFile = uploaded.image?.[0];
     const referenceVideoFile = uploaded.referenceVideo?.[0];
+    const middleKeyframeFiles = (uploaded.keyframeMiddleImages ?? []).slice(0, MAX_MIDDLE_KEYFRAMES);
+    const finalFrameFile = uploaded.finalFrameImage?.[0];
     const referenceImageFiles = referenceImageFields.flatMap((item) => {
       const file = uploaded[item.field]?.[0];
       return file ? [{ ...item, file }] : [];
@@ -216,10 +372,24 @@ app.post("/api/tasks", upload.fields([
         return;
       }
     }
+    for (const [index, file] of middleKeyframeFiles.entries()) {
+      if (!file.mimetype.startsWith("image/")) {
+        res.status(400).json({ message: `keyframeMiddleImages[${index}] must be an image file` });
+        return;
+      }
+    }
+    if (finalFrameFile && !finalFrameFile.mimetype.startsWith("image/")) {
+      res.status(400).json({ message: "finalFrameImage must be an image file" });
+      return;
+    }
 
     const params = taskSchema.parse(req.body);
     if (params.inputControlMode === "keyframe_control" && (referenceImageFiles.length > 0 || referenceVideoFile)) {
       res.status(400).json({ message: "关键帧控制模式不能同时使用三视图或参考视频" });
+      return;
+    }
+    if (params.inputControlMode === "multi_reference" && (middleKeyframeFiles.length > 0 || finalFrameFile)) {
+      res.status(400).json({ message: "多参考图模式不能同时提交关键帧图片" });
       return;
     }
     const taskId = randomUUID();
@@ -247,13 +417,83 @@ app.post("/api/tasks", upload.fields([
         ossKey: referenceUpload?.key ?? null
       });
     }
+    const keyframeImages: TaskKeyframeImage[] = params.inputControlMode === "keyframe_control"
+      ? [{
+        role: "initial",
+        index: 0,
+        filePath: paths.sourceImage,
+        fileName: "source.png",
+        url: sourceUpload?.url ?? null,
+        ossKey: sourceUpload?.key ?? null
+      }]
+      : [];
+    if (params.inputControlMode === "keyframe_control") {
+      for (const [index, file] of middleKeyframeFiles.entries()) {
+        const keyframePng = await normalizeImageUpload(file);
+        const fileName = `keyframe-middle-${index + 1}.png`;
+        const filePath = path.join(paths.sourceDir, fileName);
+        await fs.writeFile(filePath, keyframePng);
+        const keyframeUpload = oss.enabled
+          ? await oss.uploadTempObject(taskId, "reference-image", fileName, keyframePng, "image/png")
+          : null;
+        keyframeImages.push({
+          role: "middle",
+          index: index + 1,
+          filePath,
+          fileName,
+          url: keyframeUpload?.url ?? null,
+          ossKey: keyframeUpload?.key ?? null
+        });
+      }
+      if (finalFrameFile) {
+        const keyframePng = await normalizeImageUpload(finalFrameFile);
+        const fileName = keyframeImageFields[0].fileName;
+        const filePath = path.join(paths.sourceDir, fileName);
+        await fs.writeFile(filePath, keyframePng);
+        const keyframeUpload = oss.enabled
+          ? await oss.uploadTempObject(taskId, "reference-image", fileName, keyframePng, "image/png")
+          : null;
+        keyframeImages.push({
+          role: "final",
+          index: middleKeyframeFiles.length + 1,
+          filePath,
+          fileName,
+          url: keyframeUpload?.url ?? null,
+          ossKey: keyframeUpload?.key ?? null
+        });
+      }
+    }
+    const referenceVideoFileName = referenceVideoFile ? safeReferenceVideoFileName(taskId, referenceVideoFile.originalname) : null;
+    const referenceVideoPath = referenceVideoFileName ? path.join(paths.sourceDir, referenceVideoFileName) : null;
+    let referenceVideoOriginalMeta: VideoMediaMeta | null = null;
+    let referenceVideoProcessedMeta: VideoMediaMeta | null = null;
+    let referenceVideoWasUpscaled = false;
+    let referenceVideoUploadPath = referenceVideoPath;
+    let referenceVideoUploadFileName = referenceVideoFileName;
+    let referenceVideoUploadMimeType = referenceVideoFile?.mimetype || "application/octet-stream";
+    if (referenceVideoFile && referenceVideoPath) {
+      await fs.writeFile(referenceVideoPath, referenceVideoFile.buffer);
+      referenceVideoOriginalMeta = await probeVideoMeta(referenceVideoPath);
+      referenceVideoProcessedMeta = referenceVideoOriginalMeta;
+      if ((referenceVideoOriginalMeta.pixelCount ?? 0) < MIN_SEEDANCE_PIXEL_COUNT) {
+        referenceVideoWasUpscaled = true;
+        referenceVideoUploadFileName = referenceVideoFileName?.replace(/\.[^.]+$/, "-upscaled.mp4") ?? `reference-video-${taskId}-${Date.now()}-upscaled.mp4`;
+        referenceVideoUploadPath = path.join(paths.sourceDir, referenceVideoUploadFileName);
+        await upscaleReferenceVideo(referenceVideoPath, referenceVideoUploadPath);
+        referenceVideoProcessedMeta = await probeVideoMeta(referenceVideoUploadPath);
+        if ((referenceVideoProcessedMeta.pixelCount ?? 0) < MIN_SEEDANCE_PIXEL_COUNT) {
+          throw new Error("Reference video upscaling did not reach Seedance minimum pixel count");
+        }
+        referenceVideoUploadMimeType = "video/mp4";
+      }
+    }
     const referenceVideoUpload = oss.enabled && referenceVideoFile
       ? await oss.uploadTempObject(
         taskId,
         "reference-video",
-        referenceVideoFile.originalname || "reference-video.mp4",
-        referenceVideoFile.buffer,
-        referenceVideoFile.mimetype || "application/octet-stream"
+        referenceVideoUploadFileName ?? "reference-video.mp4",
+        await fs.readFile(referenceVideoUploadPath as string),
+        referenceVideoUploadMimeType
       )
       : null;
 
@@ -265,18 +505,29 @@ app.post("/api/tasks", upload.fields([
       sourceImageUrl: sourceUpload?.url ?? null,
       sourceImageOssKey: sourceUpload?.key ?? null,
       referenceImages,
-      referenceVideoPath: null,
+      keyframeImages,
+      referenceVideoPath: referenceVideoUploadPath,
       referenceVideoUrl: referenceVideoUpload?.url ?? null,
       referenceVideoOssKey: referenceVideoUpload?.key ?? null,
-      prompt: buildFinalPrompt(
-        params.prompt || defaultPrompt,
-        params.rotationMode as RotationMode,
+      referenceVideoFileName: referenceVideoUploadFileName,
+      referenceVideoMimeType: referenceVideoUploadMimeType,
+      referenceVideoFileSize: referenceVideoUploadPath ? (await fs.stat(referenceVideoUploadPath)).size : null,
+      referenceVideoOriginalMeta,
+      referenceVideoProcessedMeta,
+      referenceVideoWasUpscaled,
+      prompt: buildSeedancePrompt({
+        userExtraPrompt: params.userExtraPrompt || params.prompt,
+        rotationMode: params.rotationMode as RotationMode,
         referenceImages,
-        params.inputControlMode as InputControlMode,
-        Boolean(referenceVideoUpload)
-      ),
+        keyframeImages,
+        inputControlMode: params.inputControlMode as InputControlMode,
+        hasReferenceVideo: Boolean(referenceVideoUpload)
+      }),
+      userExtraPrompt: params.userExtraPrompt || params.prompt || null,
       inputControlMode: params.inputControlMode as InputControlMode,
       rotationMode: params.rotationMode as RotationMode,
+      aspectRatio: params.aspectRatio as AspectRatio,
+      resolutionPreset: params.resolutionPreset as ResolutionPreset,
       duration: params.duration,
       fps: params.fps,
       width: params.width,
@@ -314,13 +565,50 @@ app.post("/api/tasks", upload.fields([
         sortOrder: referenceImageFields.find((field) => field.role === item.role)?.sortOrder ?? 0
       });
     }
+    for (const item of keyframeImages) {
+      await store.addOutput(taskId, {
+        outputType: "keyframe_image",
+        filePath: item.filePath,
+        fileName: item.role === "initial" ? "视频初始帧.png" : item.role === "final" ? "视频尾帧.png" : `中间帧 ${item.index}.png`,
+        fileSize: (await fs.stat(item.filePath)).size,
+        sortOrder: item.role === "initial" ? 0 : item.role === "middle" ? item.index : 100
+      });
+    }
     if (referenceImages.length > 0) {
       await store.addLog(taskId, "QUEUED", "info", "Reference view images uploaded", {
         roles: referenceImages.map((item) => item.role)
       });
     }
+    if (keyframeImages.length > 0) {
+      await store.addLog(taskId, "QUEUED", "info", "Keyframe control images uploaded", {
+        frames: keyframeImages.map((item) => ({ role: item.role, index: item.index, url: item.url }))
+      });
+    }
     if (referenceVideoUpload) {
-      await store.addLog(taskId, "QUEUED", "info", "参考视频已上传至 OSS 临时目录", { ossKey: referenceVideoUpload.key });
+      await store.addOutput(taskId, {
+        outputType: "reference_video",
+        filePath: referenceVideoUploadPath as string,
+        fileName: referenceVideoUploadFileName as string,
+        fileSize: referenceVideoUploadPath ? (await fs.stat(referenceVideoUploadPath)).size : 0,
+        sortOrder: 4
+      });
+      await store.addLog(taskId, "QUEUED", "info", "Reference video uploaded to OSS temp directory", {
+        originalName: referenceVideoFile?.originalname,
+        storedFileName: referenceVideoUploadFileName,
+        originalMeta: referenceVideoOriginalMeta,
+        processedMeta: referenceVideoProcessedMeta,
+        wasUpscaled: referenceVideoWasUpscaled,
+        mimeType: referenceVideoUploadMimeType,
+        fileSize: referenceVideoUploadPath ? (await fs.stat(referenceVideoUploadPath)).size : 0,
+        ossKey: referenceVideoUpload.key,
+        url: referenceVideoUpload.url
+      });
+      if (referenceVideoWasUpscaled) {
+        await store.addLog(taskId, "QUEUED", "info", "Reference video was automatically upscaled before OSS upload", {
+          from: referenceVideoOriginalMeta,
+          to: referenceVideoProcessedMeta
+        });
+      }
     }
     await store.addLog(taskId, "QUEUED", "info", "任务已创建并进入队列");
     await queue.enqueue(taskId);
@@ -426,7 +714,7 @@ app.delete("/api/tasks/:id", async (req, res, next) => {
     const taskId = req.params.id;
     const task = await store.get(taskId);
     if (!task) {
-      res.status(404).json({ message: "Task not found" });
+      res.json({ ok: true, deleted: false, message: "Task already deleted" });
       return;
     }
     for (const dir of ["uploads", "videos", "frames", "cutouts", "previews", "zips"]) {
@@ -438,7 +726,8 @@ app.delete("/api/tasks/:id", async (req, res, next) => {
     await Promise.all([
       oss.deleteObject(task.sourceImageOssKey),
       oss.deleteObject(task.referenceVideoOssKey),
-      ...(task.referenceImages ?? []).map((item) => oss.deleteObject(item.ossKey))
+      ...(task.referenceImages ?? []).map((item) => oss.deleteObject(item.ossKey)),
+      ...(task.keyframeImages ?? []).map((item) => item.role === "initial" ? Promise.resolve() : oss.deleteObject(item.ossKey))
     ]);
     await store.remove(taskId);
     res.status(204).send();
@@ -536,6 +825,26 @@ app.get("/api/tasks/:id/preview/frame/:index", async (req, res, next) => {
     const task = await store.get(req.params.id);
     if (!task) return res.status(404).json({ message: "Task not found" });
     return sendPreview(res, task, "raw_frame", Number(req.params.index) - 1);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/tasks/:id/preview/keyframe/:index", async (req, res, next) => {
+  try {
+    const task = await store.get(req.params.id);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+    return sendPreview(res, task, "keyframe_image", Number(req.params.index) - 1);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get("/api/tasks/:id/preview/reference/:index", async (req, res, next) => {
+  try {
+    const task = await store.get(req.params.id);
+    if (!task) return res.status(404).json({ message: "Task not found" });
+    return sendPreview(res, task, "reference_image", Number(req.params.index) - 1);
   } catch (error) {
     return next(error);
   }

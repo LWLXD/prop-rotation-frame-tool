@@ -10,6 +10,23 @@ import type { TaskStore } from "./task-store.js";
 import type { Task } from "@prop-tool/shared";
 
 const execFileAsync = promisify(execFile);
+const MIN_SEEDANCE_VIDEO_PIXELS = 409600;
+
+type SeedanceContentItem = {
+  type: "text" | "image_url" | "video_url";
+  text?: string;
+  role?: string;
+  image_url?: { url: string };
+  video_url?: { url: string };
+};
+
+type MediaMetadata = {
+  width?: number;
+  height?: number;
+  pixelCount?: number;
+  duration?: number;
+  format?: string;
+};
 
 async function fileSize(filePath: string): Promise<number> {
   const stat = await fs.stat(filePath);
@@ -48,6 +65,36 @@ async function pngHasAlphaChannel(filePath: string): Promise<boolean> {
 
 async function runFfmpeg(args: string[]): Promise<void> {
   await execFileAsync("ffmpeg", args, { windowsHide: true, maxBuffer: 1024 * 1024 * 10 });
+}
+
+async function probeMediaMetadata(input: string): Promise<MediaMetadata> {
+  const { stdout } = await execFileAsync("ffprobe", [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=width,height,duration:format=duration,format_name",
+    "-of",
+    "json",
+    input
+  ], { windowsHide: true, maxBuffer: 1024 * 1024 * 10 });
+  const payload = JSON.parse(stdout) as {
+    streams?: Array<{ width?: number; height?: number; duration?: string }>;
+    format?: { duration?: string; format_name?: string };
+  };
+  const stream = payload.streams?.[0];
+  const width = typeof stream?.width === "number" ? stream.width : undefined;
+  const height = typeof stream?.height === "number" ? stream.height : undefined;
+  const durationText = stream?.duration ?? payload.format?.duration;
+  const duration = durationText ? Number(durationText) : undefined;
+  return {
+    width,
+    height,
+    pixelCount: width && height ? width * height : undefined,
+    duration: Number.isFinite(duration) ? duration : undefined,
+    format: payload.format?.format_name
+  };
 }
 
 async function generateMockVideo(task: Task, videoPath: string): Promise<void> {
@@ -122,7 +169,45 @@ function extractSeedanceStatus(payload: unknown): string {
   ).toLowerCase();
 }
 
-async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record<string, unknown>> {
+async function logSeedanceContentSummary(task: Task, store: TaskStore, content: SeedanceContentItem[]): Promise<void> {
+  const summary: Array<Record<string, unknown>> = [];
+  for (const [index, item] of content.entries()) {
+    const url = item.image_url?.url ?? item.video_url?.url;
+    const entry: Record<string, unknown> = {
+      index,
+      type: item.type,
+      role: item.role,
+      url
+    };
+    if (item.type === "video_url" && url) {
+      try {
+        const media = await probeMediaMetadata(url);
+        entry.media = media;
+        if (media.pixelCount !== undefined && media.pixelCount < MIN_SEEDANCE_VIDEO_PIXELS) {
+          throw new Error(
+            `Reference video pixel count ${media.pixelCount} (${media.width}x${media.height}) is below Seedance minimum ${MIN_SEEDANCE_VIDEO_PIXELS}`
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("below Seedance minimum")) {
+          throw error;
+        }
+        entry.mediaProbeError = message;
+        await store.addLog(task.id, "GENERATING_VIDEO", "warn", "Reference video media probe failed", {
+          index,
+          url,
+          error: message
+        });
+      }
+    }
+    summary.push(entry);
+    console.log("[Seedance content]", entry);
+  }
+  await store.addLog(task.id, "GENERATING_VIDEO", "info", "Seedance content summary", { content: summary });
+}
+
+async function createSeedanceTask(task: Task, config: AppConfig, store: TaskStore): Promise<Record<string, unknown>> {
   if (!task.sourceImageUrl) {
     throw new Error("OSS source image URL is required when SEEDANCE_MOCK=false");
   }
@@ -130,30 +215,45 @@ async function createSeedanceTask(task: Task, config: AppConfig): Promise<Record
   if (inputControlMode === "keyframe_control" && ((task.referenceImages ?? []).length > 0 || task.referenceVideoUrl)) {
     throw new Error("关键帧控制模式不能同时使用三视图或参考视频");
   }
-  const referenceImageContent = (task.referenceImages ?? [])
+  const middleKeyframeContent: SeedanceContentItem[] = (task.keyframeImages ?? [])
+    .filter((item) => item.role === "middle" && Boolean(item.url))
+    .sort((a, b) => a.index - b.index)
+    .map((item) => ({
+      type: "image_url",
+      image_url: { url: item.url as string },
+      role: "middle_frame"
+    }));
+  const finalKeyframe = (task.keyframeImages ?? []).find((item) => item.role === "final" && Boolean(item.url));
+  const referenceImageContent: SeedanceContentItem[] = (task.referenceImages ?? [])
     .filter((item) => Boolean(item.url))
     .map((item) => ({
       type: "image_url",
       image_url: { url: item.url as string },
       role: "reference_image"
     }));
-  const content = inputControlMode === "keyframe_control"
+  const referenceVideoContent: SeedanceContentItem[] = task.referenceVideoUrl
+    ? [{ type: "video_url", role: "reference_video", video_url: { url: task.referenceVideoUrl } }]
+    : [];
+  const content: SeedanceContentItem[] = inputControlMode === "keyframe_control"
     ? [
       { type: "text", text: task.prompt },
-      { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "first_frame" }
+      { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "first_frame" },
+      ...middleKeyframeContent,
+      ...(finalKeyframe ? [{ type: "image_url", image_url: { url: finalKeyframe.url as string }, role: "last_frame" } satisfies SeedanceContentItem] : [])
     ]
     : [
       { type: "text", text: task.prompt },
       { type: "image_url", image_url: { url: task.sourceImageUrl }, role: "reference_image" },
       ...referenceImageContent,
-      ...(task.referenceVideoUrl ? [{ type: "video_url", role: "reference_video", video_url: { url: task.referenceVideoUrl } }] : [])
+      ...referenceVideoContent
     ];
+  await logSeedanceContentSummary(task, store, content);
   const body = {
     model: config.ark.modelId,
     content,
     duration: task.duration,
-    ratio: "1:1",
-    resolution: task.width >= 1024 || task.height >= 1024 ? "1080p" : "720p",
+    ratio: task.aspectRatio ?? "1:1",
+    resolution: task.resolutionPreset ?? (task.width >= 1024 || task.height >= 1024 ? "1080p" : "720p"),
     watermark: false,
     return_last_frame: false
   };
@@ -202,7 +302,7 @@ async function generateSeedanceVideo(task: Task, config: AppConfig, store: TaskS
       ? "Seedance input mode: keyframe_control, main=first_frame"
       : `Seedance input mode: multi_reference, main=reference_image${referenceRoles.length > 0 ? `, reference_views=${referenceRoles.join(",")}` : ""}${task.referenceVideoUrl ? ", reference_video=enabled" : ""}`
   );
-  const createPayload = await createSeedanceTask(task, config);
+  const createPayload = await createSeedanceTask(task, config, store);
   const seedanceTaskId = readStringPath(createPayload, ["id"]) ?? readStringPath(createPayload, ["data", "id"]);
   if (!seedanceTaskId) {
     throw new Error("Seedance create task response did not include id");

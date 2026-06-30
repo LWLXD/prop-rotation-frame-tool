@@ -63,14 +63,18 @@ export async function cancelTask(id: string): Promise<void> {
 
 export async function deleteTask(id: string): Promise<void> {
   const response = await fetch(`${apiBaseUrl}/api/tasks/${id}`, { method: "DELETE" });
+  if (response.status === 404) {
+    console.info(`Task ${id} was already deleted`);
+    return;
+  }
   if (!response.ok) {
     throw new Error(`Delete failed: ${response.status}`);
   }
 }
 
-export function previewUrl(taskId: string, kind: "source" | "video" | "frame" | "cutout", index?: number, token?: string) {
+export function previewUrl(taskId: string, kind: "source" | "video" | "frame" | "keyframe" | "reference" | "cutout", index?: number, token?: string) {
   const suffix = token ? `?v=${encodeURIComponent(token)}` : "";
-  if (kind === "frame" || kind === "cutout") {
+  if (kind === "frame" || kind === "cutout" || kind === "keyframe" || kind === "reference") {
     return `${apiBaseUrl}/api/tasks/${taskId}/preview/${kind}/${index ?? 1}${suffix}`;
   }
   return `${apiBaseUrl}/api/tasks/${taskId}/preview/${kind}${suffix}`;
